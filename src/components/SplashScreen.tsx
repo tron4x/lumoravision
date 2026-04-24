@@ -8,9 +8,9 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
   const [phase, setPhase] = useState<'visible' | 'fadeout'>('visible');
 
   useEffect(() => {
-    // Show for 2s, then fade out over 0.6s
-    const showTimer = setTimeout(() => setPhase('fadeout'), 2000);
-    const doneTimer = setTimeout(() => onDone(), 2600);
+    // Show for 5s, then fade out over 0.6s
+    const showTimer = setTimeout(() => setPhase('fadeout'), 5000);
+    const doneTimer = setTimeout(() => onDone(), 5600);
     return () => { clearTimeout(showTimer); clearTimeout(doneTimer); };
   }, [onDone]);
 
@@ -39,7 +39,6 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
           />
           <div className="flex flex-col items-center gap-1">
             <span className="text-2xl font-bold tracking-widest text-white" style={{ letterSpacing: '0.15em' }}>
-              LUMORAVISION
             </span>
             <span className="text-xs text-slate-500 tracking-widest uppercase">Modern Media Player</span>
           </div>
