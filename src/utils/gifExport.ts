@@ -27,7 +27,9 @@ export async function exportGif(
     onProgress
   } = options;
   
-  const duration = endTime - startTime;
+  const MAX_GIF_DURATION = 30; // seconds – prevent browser hang on very long exports
+  const clampedEnd = Math.min(endTime, startTime + MAX_GIF_DURATION);
+  const duration = clampedEnd - startTime;
   const frameCount = Math.ceil(duration * fps);
   const frameDelay = 1000 / fps;
   

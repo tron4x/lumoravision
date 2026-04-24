@@ -32,8 +32,8 @@ export default function App() {
     supportsFileSystemAPI,
   } = useFileSystem();
 
-  const videos = activeFolder?.videos ?? [];
-  const images = activeFolder?.images ?? [];
+  const videos = useMemo(() => activeFolder?.videos ?? [], [activeFolder]);
+  const images = useMemo(() => activeFolder?.images ?? [], [activeFolder]);
   const { sortedVideos, sortConfig, toggleSort } = useSort(videos);
 
   const [activeVideo, setActiveVideo] = useState<VideoFile | null>(null);

@@ -18,7 +18,7 @@ export function formatDuration(seconds: number): string {
 }
 
 export function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString('de-DE', {
+  return new Date(timestamp).toLocaleDateString(navigator.language || undefined, {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',

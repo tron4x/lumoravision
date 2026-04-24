@@ -39,8 +39,9 @@ export function Storyboard({ video, onClose, onSeekTo }: StoryboardProps) {
     const newFrames: StoryboardFrame[] = [];
 
     const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
-    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
     // Thumbnail size
     const thumbWidth = 192;
     const thumbHeight = Math.round((vid.videoHeight / vid.videoWidth) * thumbWidth);

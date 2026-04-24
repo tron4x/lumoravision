@@ -23,19 +23,18 @@ export function InfoModal({ onClose }: InfoModalProps) {
           </button>
         </div>
 
-        {/* GIF */}
-        <div className="bg-black flex items-center justify-center p-4">
+        {/* Logo */}
+        <div className="bg-[#0a0a0f] flex items-center justify-center p-8">
           <img
-            src="/2.gif"
+            src="/lumoravision.png"
             alt="Lumoravision"
-            className="max-w-full max-h-[60vh] object-contain rounded-lg"
+            className="max-w-[360px] w-full object-contain select-none drop-shadow-[0_0_40px_rgba(6,182,212,0.5)]"
             draggable={false}
           />
         </div>
 
         {/* Info text */}
         <div className="px-6 py-4 flex flex-col items-center gap-2 border-t border-slate-800/60">
-          <span className="text-lg font-bold tracking-widest text-white uppercase" style={{ letterSpacing: '0.15em' }}>Lumoravision</span>
           <span className="text-xs text-slate-500 tracking-widest uppercase">Modern Media Player</span>
           <div className="flex items-center gap-4 mt-2 text-xs text-slate-600">
             <span>Videos · Images · Screenshots</span>

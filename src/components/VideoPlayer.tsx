@@ -69,6 +69,7 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
       vid.playbackRate = playbackRate;
       vid.play().then(() => setIsPlaying(true)).catch(() => {});
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video.url]);
 
   useEffect(() => {
@@ -101,36 +102,36 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
     finally { setIsAnalyzing(false); setAnalyzed(true); }
   }, [analyzed, isAnalyzing]);
 
-  function resetControlsTimer() {
+  const resetControlsTimer = useCallback(() => {
     setShowControls(true);
     if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
     controlsTimerRef.current = setTimeout(() => {
       if (isPlayingRef.current) setShowControls(false);
     }, 3000);
-  }
+  }, []);
 
-  function togglePlay() {
+  const togglePlay = useCallback(() => {
     const vid = videoRef.current;
     if (!vid) return;
     if (vid.paused) { vid.play().then(() => setIsPlaying(true)).catch(() => {}); }
     else { vid.pause(); setIsPlaying(false); }
     resetControlsTimer();
-  }
+  }, [resetControlsTimer]);
 
-  function toggleMute() {
+  const toggleMute = useCallback(() => {
     const vid = videoRef.current;
     if (!vid) return;
     vid.muted = !vid.muted;
     setIsMuted(vid.muted);
-  }
+  }, []);
 
-  function toggleLoop() { setIsLoop(prev => !prev); }
+  const toggleLoop = useCallback(() => { setIsLoop(prev => !prev); }, []);
 
-  function skip(seconds: number) {
+  const skip = useCallback((seconds: number) => {
     const vid = videoRef.current;
     if (!vid) return;
     vid.currentTime = Math.max(0, Math.min(vid.duration, vid.currentTime + seconds));
-  }
+  }, []);
 
   function jumpToChapter(chapter: SceneChapter) {
     const vid = videoRef.current;
@@ -176,7 +177,7 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
     else vid.requestFullscreen().catch(() => {});
   }
 
-  function takeScreenshot() {
+  const takeScreenshot = useCallback(() => {
     const vid = videoRef.current;
     if (!vid) return;
     // Pause first so user sees exactly which frame is captured
@@ -198,15 +199,15 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
       a.click();
       URL.revokeObjectURL(url);
     }, 'image/png');
-  }
+  }, [video.name]);
 
   // Step one frame forward/backward (approx. 1/30s)
-  function stepFrame(direction: 1 | -1) {
+  const stepFrame = useCallback((direction: 1 | -1) => {
     const vid = videoRef.current;
     if (!vid) return;
     if (!vid.paused) { vid.pause(); setIsPlaying(false); }
     vid.currentTime = Math.max(0, Math.min(vid.duration, vid.currentTime + direction * (1 / 30)));
-  }
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -231,7 +232,7 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [hasPrev, hasNext, onPrev, onNext, onClose, showSpeedMenu]);
+  }, [hasPrev, hasNext, onPrev, onNext, onClose, showSpeedMenu, togglePlay, toggleMute, toggleLoop, skip, stepFrame, takeScreenshot]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const activeChapterIdx = chapters.reduce((best, ch, i) => ch.time <= currentTime ? i : best, 0);

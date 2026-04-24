@@ -32,9 +32,9 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
         }}
       >
           <img
-            src="/2.png"
+            src="/lumoravision.png"
             alt="Lumoravision"
-            className="w-[600px] max-w-[90vw] max-h-[80vh] object-contain select-none"
+            className="w-96 max-w-[80vw] object-contain select-none drop-shadow-[0_0_60px_rgba(6,182,212,0.6)]"
             draggable={false}
           />
           <div className="flex flex-col items-center gap-1">
