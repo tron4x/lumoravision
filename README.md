@@ -30,8 +30,8 @@
 Lumoravision is built to be ready instantly — no setup, no accounts, no waiting:
 
 - 🚫 **No upload, no server** – your files never leave your computer
-- ⚡ **Lightning-fast thumbnails** – generated directly in the browser and cached in memory
-- 👁️ **Hover preview** – videos start playing automatically on hover, no click needed
+- ⚡ **Lightning-fast thumbnails** – canvas-generated at native resolution, cached in memory, lazy-loaded via IntersectionObserver
+- 👁️ **Hover preview** – videos start playing automatically on hover after 150 ms, no click needed
 - ⌨️ **Keyboard-first** – all major actions accessible via shortcuts
 - 🔍 **Instant search** – filters videos and images in real time as you type
 - 💾 **Persistent folders** – automatically restored on next launch *(browser-dependent, see below)*
@@ -42,50 +42,127 @@ Lumoravision is built to be ready instantly — no setup, no accounts, no waitin
 
 <details>
 <summary><strong>📁 File Management</strong></summary>
+<br/>
 
 - Open local folders via the native OS dialog
-- Manage multiple folders simultaneously (sidebar)
+- Manage multiple folders simultaneously in the sidebar
+- Sidebar shows folder name, video count and a "needs reopen" warning (amber) for browsers that lost access after reload
 - Rescan a folder to pick up newly added files
 - Sort by name, date, file size or video duration
-- Real-time search across all files
+- Real-time search across all files in the active folder
 
 </details>
 
 <details>
-<summary><strong>🎬 Video Player</strong></summary>
+<summary><strong>🎬 Video Grid & List</strong></summary>
+<br/>
 
 - Supported formats: MP4, MOV, WebM, MKV, AVI, OGV, M4V, WMV, FLV, 3GP, TS and more
-- Full-screen player with prev/next navigation
-- Playback speed control: 0.25× to 2×
-- Loop mode
-- Volume control and mute
-- **Auto chapter detection** – scene analysis runs entirely in the browser
-- Chapter strip with thumbnails and timestamps
-- **Frame-accurate navigation** – step forward/backward one frame at a time
-- **Screenshot mode** – pick any frame and save it as PNG
-- **GIF export** – choose time range, FPS and width, exported directly in the browser
-- **Storyboard view** – visual overview of all frames with preview and single-frame export
-- **Splitscreen player** – compare two videos side by side
-- **Playlist** – build and play a custom queue
+- Color-coded format badges per extension (blue = MP4, purple = MOV, green = WebM, orange = MKV, red = AVI, …)
+- High-quality canvas thumbnails (JPEG 92%, up to 1280 px wide), generated lazily when the card enters the viewport
+- Hover preview: video plays inline after 150 ms, pauses and resets on mouse leave
+- Duration badge on every card
+- Per-card hover actions: **Storyboard**, **Splitscreen**, **Add to Playlist**
+- Grid view (responsive, 2–7 columns) and List view
+
+</details>
+
+<details>
+<summary><strong>▶️ Full-Screen Video Player</strong></summary>
+<br/>
+
+- Prev / Next navigation (keyboard: `Alt+←` / `Alt+→`)
+- Playback speed: 0.25× · 0.5× · 0.75× · 1× · 1.25× · 1.5× · 1.75× · 2×
+- Loop mode with on-screen indicator
+- Volume slider + mute toggle
+- Progress bar with chapter markers and hover tooltip
+- **Auto chapter detection** – scene analysis runs entirely in the browser using Canvas; generates up to 20 chapters snapped to real scene cuts
+- Chapter strip with thumbnails and timestamps (scrollable, fixed height)
+- **Frame-accurate navigation** – step forward/backward one frame (~1/30 s) with `,` / `.`
+- **Screenshot mode** – frame slider, quick-jump buttons (±1 s, ±10 s, ±60 s), save as PNG
+- **GIF export** – set start/end time, FPS (5/10/15/20) and width (240–640 px); progress bar; exported entirely in the browser via gif.js Web Worker; max 30 s to prevent browser hang
+- Controls auto-hide after 3 s during playback; reappear on mouse move
+- Maximize mode (fills the viewport)
+- Native fullscreen support
+
+</details>
+
+<details>
+<summary><strong>⌨️ Keyboard Shortcuts (Video Player)</strong></summary>
+<br/>
+
+| Key | Action |
+|:---|:---|
+| `Space` / `K` | Play / Pause |
+| `←` / `→` | Seek ±10 s |
+| `J` / `L` | Seek ±10 s (YouTube style) |
+| `Alt+←` / `Alt+→` | Previous / Next video |
+| `↑` / `↓` | Volume ±10% |
+| `M` | Toggle mute |
+| `R` | Toggle loop |
+| `,` / `.` | Step one frame back / forward |
+| `S` | Save screenshot (PNG) |
+| `Esc` | Close player |
+
+</details>
+
+<details>
+<summary><strong>📋 Storyboard</strong></summary>
+<br/>
+
+- Visual overview of all frames extracted from a video
+- Configurable frame count (10 / 20 / 30 / 50 / 100) and grid columns (3–10)
+- Click any frame to open an inline preview with play/pause
+- Save individual frames as full-resolution PNG
+- Export the entire storyboard as a single PNG image
+- "Open in Player" button to jump to the selected frame in the main player
+
+</details>
+
+<details>
+<summary><strong>⬛⬛ Splitscreen Player</strong></summary>
+<br/>
+
+- Compare two videos side by side in the same window
+- **4 layout modes**: Side-by-side · Top/Bottom · Picture-in-Picture left · Picture-in-Picture right (switch with keys `1`–`4`)
+- **Sync mode**: both videos seek and play together; toggle to independent mode with `S`
+- Separate progress bars and volume controls for each video
+- Change the right-panel video at any time via the video selector
+- Controls auto-hide during playback
+
+</details>
+
+<details>
+<summary><strong>🎵 Playlist</strong></summary>
+<br/>
+
+- Add individual videos to the playlist via the `+` button on each card or list row
+- "Add all N videos" shortcut to queue the entire current view
+- Playlist panel (sidebar, right side) with thumbnails, drag-to-reorder-ready list
+- Play / Clear buttons in the panel header
+- If no playlist is active, the player uses all filtered videos as the play queue automatically
 
 </details>
 
 <details>
 <summary><strong>🖼️ Image Viewer</strong></summary>
+<br/>
 
 - Supported formats: JPG, PNG, GIF, WebP, AVIF, BMP, TIFF, SVG, HEIC
-- Full-screen viewer with arrow navigation
-- Grid and list view
+- Full-screen viewer with left/right arrow navigation
+- Grid view and List view (with inline thumbnail)
 
 </details>
 
 <details>
 <summary><strong>🎨 Interface</strong></summary>
+<br/>
 
-- Sleek dark design with ambient glow effects
-- Switchable grid and list layout
-- Animated splash screen on startup
-- Fully responsive
+- Sleek dark design with ambient cyan glow orbs
+- Animated splash screen on startup (5 s, then fade-out)
+- Switchable grid / list layout
+- Fully responsive (2–7 column grid adapts to screen width)
+- Stagger animation on card load
 
 </details>
 
@@ -105,7 +182,7 @@ Lumoravision uses the browser's **File System Access API** to read local folders
 > [!NOTE]
 > Chrome and Edge implement the full **File System Access API** including persistent permissions via `IndexedDB` + `FileSystemDirectoryHandle`. This allows Lumoravision to store the folder handle across sessions and restore it automatically — without any user interaction.
 >
-> Firefox and Safari only partially support this API. A fallback picker is used instead, which does not allow persistent permissions. After a reload the folder must be opened again manually.
+> Firefox and Safari only partially support this API. A fallback picker is used instead, which does not allow persistent permissions. After a reload the folder must be opened again manually. Folders that need to be reopened are highlighted in **amber** in the sidebar.
 >
 > **This is not a bug in Lumoravision — it is a deliberate security decision made by the browser vendors.**
 
@@ -146,7 +223,7 @@ Output goes to `dist/` — ready to deploy on any static host (GitHub Pages, Net
 | Styling | Tailwind CSS 4 |
 | Build tool | Vite 8 |
 | Persistence | IndexedDB + File System Access API |
-| Thumbnails | HTML5 Canvas API |
+| Thumbnails | HTML5 Canvas API (lazy, IntersectionObserver) |
 | Video | HTML5 Video API (native, no memory leaks) |
 | GIF Export | gif.js (Web Worker, runs entirely in the browser) |
 
@@ -166,6 +243,7 @@ src/
 │   ├── Toolbar.tsx            # Search, sort, view toggle
 │   ├── Storyboard.tsx         # Frame overview & export
 │   ├── SplitscreenPlayer.tsx  # Side-by-side video comparison
+│   ├── PlaylistItem.tsx       # Playlist panel item
 │   ├── SplashScreen.tsx       # Animated intro
 │   └── InfoModal.tsx          # About dialog
 ├── hooks/
