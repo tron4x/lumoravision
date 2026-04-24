@@ -18,9 +18,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/tron4x/lumoravision/stargazers"><img src="https://img.shields.io/github/stars/tron4x/lumoravision?style=for-the-badge&color=yellow" alt="Stars" /></a>
-  <a href="https://github.com/tron4x/lumoravision/issues"><img src="https://img.shields.io/github/issues/tron4x/lumoravision?style=for-the-badge&color=red" alt="Issues" /></a>
-  <a href="https://github.com/tron4x/lumoravision/commits/main"><img src="https://img.shields.io/github/last-commit/tron4x/lumoravision?style=for-the-badge&color=blue" alt="Last Commit" /></a>
+  <a href="https://github.com/tron4x/lumoravision"><img src="https://img.shields.io/badge/Platform-Browser-61DAFB?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Platform" /></a>
+  <a href="https://github.com/tron4x/lumoravision"><img src="https://img.shields.io/badge/Zero_Backend-100%25_Client--Side-06B6D4?style=for-the-badge&logo=html5&logoColor=white" alt="Zero Backend" /></a>
+  <a href="https://github.com/tron4x/lumoravision"><img src="https://img.shields.io/badge/Made_by-tron4x-8B5CF6?style=for-the-badge&logo=github&logoColor=white" alt="Made by tron4x" /></a>
 </p>
 
 ---
