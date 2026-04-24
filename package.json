@@ -1,7 +1,32 @@
 {
   "name": "lumoravision",
+  "version": "1.1.6",
+  "description": "A fast, modern browser-based media player — no installation, no server, no cloud. Open a folder and start watching.",
+  "author": "tron4x <https://github.com/tron4x>",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/tron4x/lumoravision#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tron4x/lumoravision.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tron4x/lumoravision/issues"
+  },
+  "keywords": [
+    "media-player",
+    "video-player",
+    "browser",
+    "react",
+    "typescript",
+    "vite",
+    "tailwindcss",
+    "gif-export",
+    "storyboard",
+    "splitscreen",
+    "no-backend",
+    "file-system-access-api"
+  ],
   "private": true,
-  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
