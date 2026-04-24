@@ -30,7 +30,7 @@
 Lumoravision is built to be ready instantly — no setup, no accounts, no waiting:
 
 - 🚫 **No upload, no server** – your files never leave your computer
-- ⚡ **Lightning-fast thumbnails** – canvas-generated at native resolution, cached in memory, lazy-loaded via IntersectionObserver
+- ⚡ **Lightning-fast thumbnails** – canvas-generated at native resolution, <br>cached in memory, lazy-loaded via IntersectionObserver
 - 👁️ **Hover preview** – videos start playing automatically on hover after 150 ms, no click needed
 - ⌨️ **Keyboard-first** – all major actions accessible via shortcuts
 - 🔍 **Instant search** – filters videos and images in real time as you type
