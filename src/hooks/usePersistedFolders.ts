@@ -1,0 +1,106 @@
+/**
+ * Persists folder handles using IndexedDB (via the File System Access API).
+ * FileSystemDirectoryHandle objects cannot be stored in localStorage (not serializable),
+ * but they CAN be stored in IndexedDB.
+ *
+ * For fallback browsers (Brave/Firefox/Safari) that don't support the File System Access API,
+ * we store folder names in localStorage so the user knows which folders to re-open.
+ */
+
+const DB_NAME = 'videoplayer-db';
+const DB_VERSION = 1;
+const STORE_NAME = 'folder-handles';
+const FALLBACK_KEY = 'videoplayer-fallback-folders';
+
+// Open IndexedDB
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export interface PersistedFolder {
+  id: string;
+  name: string;
+  handle?: FileSystemDirectoryHandle;
+}
+
+// Save a folder handle to IndexedDB
+export async function saveFolderHandle(id: string, name: string, handle: FileSystemDirectoryHandle): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put({ id, name, handle });
+    await new Promise<void>((res, rej) => {
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+    db.close();
+  } catch (e) {
+    console.warn('Could not save folder handle to IndexedDB:', e);
+  }
+}
+
+// Remove a folder handle from IndexedDB
+export async function removeFolderHandle(id: string): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(id);
+    await new Promise<void>((res, rej) => {
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+    db.close();
+  } catch (e) {
+    console.warn('Could not remove folder handle from IndexedDB:', e);
+  }
+}
+
+// Load all saved folder handles from IndexedDB
+export async function loadFolderHandles(): Promise<PersistedFolder[]> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const result = await new Promise<PersistedFolder[]>((res, rej) => {
+      const req = tx.objectStore(STORE_NAME).getAll();
+      req.onsuccess = () => res(req.result as PersistedFolder[]);
+      req.onerror = () => rej(req.error);
+    });
+    db.close();
+    return result;
+  } catch (e) {
+    console.warn('Could not load folder handles from IndexedDB:', e);
+    return [];
+  }
+}
+
+// --- Fallback: localStorage for browsers without File System Access API ---
+
+export interface FallbackFolderInfo {
+  id: string;
+  name: string;
+}
+
+export function saveFallbackFolders(folders: FallbackFolderInfo[]): void {
+  try {
+    localStorage.setItem(FALLBACK_KEY, JSON.stringify(folders));
+  } catch (e) {
+    console.warn('Could not save to localStorage:', e);
+  }
+}
+
+export function loadFallbackFolders(): FallbackFolderInfo[] {
+  try {
+    const raw = localStorage.getItem(FALLBACK_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as FallbackFolderInfo[];
+  } catch {
+    return [];
+  }
+}
