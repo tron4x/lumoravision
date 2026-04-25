@@ -2,8 +2,16 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import type { VideoFile } from '../types/video';
 import { formatDuration } from '../utils/format';
 
-// Thumbnail cache for video selector
+// Thumbnail cache for video selector – capped at 200 entries to prevent memory leaks
+const CACHE_MAX = 200;
 const thumbnailCache = new Map<string, string>();
+function cachePut(id: string, dataUrl: string) {
+  if (thumbnailCache.size >= CACHE_MAX) {
+    // Evict the oldest entry (Map preserves insertion order)
+    thumbnailCache.delete(thumbnailCache.keys().next().value!);
+  }
+  thumbnailCache.set(id, dataUrl);
+}
 
 function generateThumbnail(url: string, videoId: string): Promise<string> {
   // Return cached thumbnail if available
@@ -15,20 +23,20 @@ function generateThumbnail(url: string, videoId: string): Promise<string> {
     const video = document.createElement('video');
     video.muted = true;
     video.playsInline = true;
-    video.preload = 'metadata';
-    video.crossOrigin = 'anonymous';
+    video.preload = 'auto';
+    // Do NOT set crossOrigin on blob: URLs – it causes CORS errors with local files
+
+    let seeked = false;
 
     const cleanup = () => {
       video.src = '';
       video.load();
     };
 
-    video.onloadedmetadata = () => {
-      const duration = video.duration;
-      video.currentTime = isFinite(duration) && duration > 0 ? duration * 0.1 : 1;
-    };
-
-    video.onseeked = () => {
+    const captureFrame = () => {
+      if (seeked) return;
+      seeked = true;
+      clearTimeout(timeout);
       try {
         const canvas = document.createElement('canvas');
         canvas.width = 160;
@@ -37,7 +45,7 @@ function generateThumbnail(url: string, videoId: string): Promise<string> {
         if (!ctx) { cleanup(); reject(new Error('No canvas context')); return; }
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        thumbnailCache.set(videoId, dataUrl);
+        cachePut(videoId, dataUrl);
         cleanup();
         resolve(dataUrl);
       } catch (e) {
@@ -46,10 +54,23 @@ function generateThumbnail(url: string, videoId: string): Promise<string> {
       }
     };
 
+    video.onloadeddata = () => {
+      // Seek to 10% of duration for a representative frame
+      const duration = video.duration;
+      const seekTo = isFinite(duration) && duration > 0 ? duration * 0.1 : 0;
+      if (seekTo > 0) {
+        video.currentTime = seekTo;
+      } else {
+        // Duration unknown – capture current frame immediately
+        captureFrame();
+      }
+    };
+
+    video.onseeked = captureFrame;
+
     video.onerror = () => { cleanup(); reject(new Error('Video load error')); };
-    
-    const timeout = setTimeout(() => { cleanup(); reject(new Error('Timeout')); }, 10000);
-    video.addEventListener('seeked', () => clearTimeout(timeout), { once: true });
+
+    const timeout = setTimeout(() => { cleanup(); reject(new Error('Timeout')); }, 15000);
 
     video.src = url;
     video.load();
@@ -58,18 +79,21 @@ function generateThumbnail(url: string, videoId: string): Promise<string> {
 
 // Video selector item component with lazy thumbnail loading
 function VideoSelectorItem({ video, isSelected, onSelect }: { video: VideoFile; isSelected: boolean; onSelect: () => void }) {
-  const [thumbnail, setThumbnail] = useState<string | null>(thumbnailCache.get(video.id) ?? null);
-  const [isLoading, setIsLoading] = useState(!thumbnailCache.has(video.id));
+  // Initialise directly from cache so we never need to call setState inside an effect
+  const [thumbnail, setThumbnail] = useState<string | null>(() => thumbnailCache.get(video.id) ?? null);
+  const [isLoading, setIsLoading] = useState(() => !thumbnailCache.has(video.id));
 
   useEffect(() => {
-    if (thumbnail) return;
+    // Cache hit – state was already initialised correctly, nothing to do
+    if (thumbnailCache.has(video.id)) return;
+
     let cancelled = false;
     generateThumbnail(video.url, video.id)
-      .then(url => { if (!cancelled) setThumbnail(url); })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setIsLoading(false); });
+      .then(url => { if (!cancelled) { setThumbnail(url); setIsLoading(false); } })
+      .catch(() => { if (!cancelled) setIsLoading(false); });
     return () => { cancelled = true; };
-  }, [video.url, video.id, thumbnail]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [video.id, video.url]);
 
   return (
     <button
@@ -124,6 +148,7 @@ export function SplitscreenPlayer({
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSynced, setIsSynced] = useState(true);
+  const [isLooping, setIsLooping] = useState(false);
   const [layout, setLayout] = useState<LayoutMode>('side-by-side');
   const [showControls, setShowControls] = useState(true);
   const [showVideoSelector, setShowVideoSelector] = useState(false);
@@ -203,14 +228,19 @@ export function SplitscreenPlayer({
     }
   }, [isSynced]);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts – all stable callbacks are in deps
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // Close selector first; only close the whole player if selector is already closed
+        setShowVideoSelector(prev => { if (prev) return false; onClose(); return false; });
+        return;
+      }
       if (e.key === ' ' || e.key === 'k') { e.preventDefault(); togglePlay(); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); skip(-10); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); skip(10); }
       else if (e.key === 's') setIsSynced(prev => !prev);
-      else if (e.key === 'Escape') onClose();
+      else if (e.key === 'l') setIsLooping(prev => !prev);
       else if (e.key === '1') setLayout('side-by-side');
       else if (e.key === '2') setLayout('top-bottom');
       else if (e.key === '3') setLayout('pip-left');
@@ -218,7 +248,7 @@ export function SplitscreenPlayer({
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [togglePlay, skip, onClose]);
+  }, [togglePlay, skip, onClose]); // togglePlay & skip are useCallback – no stale closure
 
   const leftProgress = leftDuration > 0 ? (leftTime / leftDuration) * 100 : 0;
   const rightProgress = rightDuration > 0 ? (rightTime / rightDuration) * 100 : 0;
@@ -311,6 +341,7 @@ export function SplitscreenPlayer({
           <video
             ref={leftRef}
             src={videoLeft.url}
+            loop={isLooping}
             className="w-full h-full object-contain"
             onTimeUpdate={() => setLeftTime(leftRef.current?.currentTime ?? 0)}
             onLoadedMetadata={() => setLeftDuration(leftRef.current?.duration ?? 0)}
@@ -328,7 +359,11 @@ export function SplitscreenPlayer({
 
           {/* Left volume */}
           <div className={`absolute bottom-3 left-3 flex items-center gap-2 bg-black/70 backdrop-blur-sm px-2 py-1 rounded-lg transition-opacity ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-            <button onClick={() => { setLeftMuted(m => !m); if (leftRef.current) leftRef.current.muted = !leftMuted; }} className="text-white">
+            <button onClick={() => {
+              const next = !leftMuted;
+              setLeftMuted(next);
+              if (leftRef.current) leftRef.current.muted = next;
+            }} className="text-white">
               {leftMuted ? '🔇' : '🔊'}
             </button>
             <input
@@ -362,6 +397,7 @@ export function SplitscreenPlayer({
               <video
                 ref={rightRef}
                 src={videoRight.url}
+                loop={isLooping}
                 className="w-full h-full object-contain"
                 onTimeUpdate={() => setRightTime(rightRef.current?.currentTime ?? 0)}
                 onLoadedMetadata={() => setRightDuration(rightRef.current?.duration ?? 0)}
@@ -378,7 +414,11 @@ export function SplitscreenPlayer({
 
               {/* Right volume */}
               <div className={`absolute bottom-3 left-3 flex items-center gap-2 bg-black/70 backdrop-blur-sm px-2 py-1 rounded-lg transition-opacity ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-                <button onClick={() => { setRightMuted(m => !m); if (rightRef.current) rightRef.current.muted = !rightMuted; }} className="text-white">
+                <button onClick={() => {
+                  const next = !rightMuted;
+                  setRightMuted(next);
+                  if (rightRef.current) rightRef.current.muted = next;
+                }} className="text-white">
                   {rightMuted ? '🔇' : '🔊'}
                 </button>
                 <input
@@ -494,10 +534,23 @@ export function SplitscreenPlayer({
             </svg>
           </button>
 
+          {/* Loop toggle */}
+          <button
+            onClick={() => setIsLooping(prev => !prev)}
+            title="Loop (L)"
+            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+              isLooping ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-300'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8zm-1 9v-2H9v2h2zm4 0v-2h-2v2h2z"/>
+            </svg>
+          </button>
+
           <div className="flex-1" />
 
           <span className="text-slate-600 text-xs">
-            Shortcuts: Space (play) · ← → (±10s) · S (sync) · 1-4 (layout)
+            Shortcuts: Space (play) · ← → (±10s) · S (sync) · L (loop) · 1-4 (layout)
           </span>
         </div>
       </div>
@@ -505,7 +558,7 @@ export function SplitscreenPlayer({
       {/* Video Selector Modal */}
       {showVideoSelector && (
         <div 
-          className="fixed inset-0 z-60 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4"
           onClick={() => setShowVideoSelector(false)}
         >
           <div 

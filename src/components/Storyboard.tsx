@@ -167,7 +167,8 @@ export function Storyboard({ video, onClose, onSeekTo }: StoryboardProps) {
     if (frames.length === 0) return;
 
     const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     
     const thumbWidth = 192;
     const thumbHeight = Math.round(thumbWidth * (9 / 16));

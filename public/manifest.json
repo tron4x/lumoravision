@@ -1,0 +1,33 @@
+{
+  "name": "Lumoravision",
+  "short_name": "Lumoravision",
+  "description": "A fast, modern browser-based media player — no installation, no server, no cloud.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#06b6d4",
+  "orientation": "landscape-primary",
+  "icons": [
+    {
+      "src": "/lumoravision.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/lumoravision.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/lumoravision.png",
+      "sizes": "2048x2048",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["entertainment", "utilities"],
+  "screenshots": [],
+  "lang": "en"
+}

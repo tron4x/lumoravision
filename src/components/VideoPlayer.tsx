@@ -4,6 +4,7 @@ import { formatDuration } from '../utils/format';
 import { detectScenes } from '../utils/sceneDetection';
 import type { SceneChapter } from '../utils/sceneDetection';
 import { exportGif, downloadBlob } from '../utils/gifExport';
+import { savePosition, loadPosition } from '../hooks/usePlaybackPosition';
 interface VideoPlayerProps {
   video: VideoFile;
   onClose: () => void;
@@ -43,34 +44,50 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
   const [isExportingGif, setIsExportingGif] = useState(false);
   const [gifProgress, setGifProgress] = useState(0);
 
-  // Scene detection state
-  const [sceneKey, setSceneKey] = useState(video.url);
+  // Scene detection state – reset automatically when video.url changes via key prop in App.tsx
   const [chapters, setChapters] = useState<SceneChapter[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
   const [analyzed, setAnalyzed] = useState(false);
 
-  // Reset scene state when video changes
-  if (video.url !== sceneKey) {
-    setSceneKey(video.url);
-    setChapters([]);
-    setIsAnalyzing(false);
-    setAnalyzeProgress(0);
-    setAnalyzed(false);
-  }
-
   const isPlayingRef = useRef(isPlaying);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
+  // Restore saved position when video loads, then start playing
   useEffect(() => {
     const vid = videoRef.current;
-    if (vid) {
-      vid.loop = isLoop;
-      vid.playbackRate = playbackRate;
+    if (!vid) return;
+    vid.loop = isLoop;
+    vid.playbackRate = playbackRate;
+
+    loadPosition(video.id).then(savedTime => {
+      if (savedTime > 0 && vid.readyState >= 1) {
+        vid.currentTime = savedTime;
+      } else if (savedTime > 0) {
+        const onMeta = () => { vid.currentTime = savedTime; vid.removeEventListener('loadedmetadata', onMeta); };
+        vid.addEventListener('loadedmetadata', onMeta);
+      }
       vid.play().then(() => setIsPlaying(true)).catch(() => {});
-    }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video.url]);
+
+  // Save position every 5 s while playing (throttled)
+  const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (isPlaying) {
+      saveTimerRef.current = setInterval(() => {
+        const vid = videoRef.current;
+        if (vid && vid.currentTime > 2) savePosition(video.id, vid.currentTime);
+      }, 5000);
+    } else {
+      if (saveTimerRef.current) { clearInterval(saveTimerRef.current); saveTimerRef.current = null; }
+      // Save immediately on pause
+      const vid = videoRef.current;
+      if (vid && vid.currentTime > 2) savePosition(video.id, vid.currentTime);
+    }
+    return () => { if (saveTimerRef.current) clearInterval(saveTimerRef.current); };
+  }, [isPlaying, video.id]);
 
   useEffect(() => {
     const vid = videoRef.current;

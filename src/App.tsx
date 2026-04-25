@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useFileSystem } from './hooks/useFileSystem';
 import { useSort } from './hooks/useSort';
 import { VideoCard } from './components/VideoCard';
@@ -8,6 +8,7 @@ import { ImageCard } from './components/ImageCard';
 import { ImageViewer } from './components/ImageViewer';
 import { SplashScreen } from './components/SplashScreen';
 import { InfoModal } from './components/InfoModal';
+import { ShortcutsModal } from './components/ShortcutsModal';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { Storyboard } from './components/Storyboard';
@@ -53,6 +54,79 @@ export default function App() {
   const [splitscreenRight, setSplitscreenRight] = useState<VideoFile | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Shortcuts modal
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  // Global keyboard shortcut: ? opens shortcuts modal
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      // Don't fire when typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === '?') setShowShortcuts(prev => !prev);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
+
+  // Drag & drop folder support
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types.includes('Files')) setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) setIsDragging(false);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+
+    const items = Array.from(e.dataTransfer.items);
+
+    // Collect all files recursively from the dropped items
+    const files: File[] = [];
+    const collectFiles = async (entry: FileSystemEntry): Promise<void> => {
+      if (entry.isFile) {
+        await new Promise<void>(resolve => {
+          (entry as FileSystemFileEntry).file(f => { files.push(f); resolve(); });
+        });
+      } else if (entry.isDirectory) {
+        const reader = (entry as FileSystemDirectoryEntry).createReader();
+        await new Promise<void>(resolve => {
+          reader.readEntries(async entries => {
+            for (const ent of entries) await collectFiles(ent);
+            resolve();
+          });
+        });
+      }
+    };
+
+    for (const item of items) {
+      if (item.kind === 'file') {
+        const entry = item.webkitGetAsEntry();
+        if (entry) await collectFiles(entry);
+      }
+    }
+
+    if (files.length > 0) {
+      const dt = new DataTransfer();
+      files.forEach(f => dt.items.add(f));
+      addFolderFallback(dt.files);
+    }
+  }, [addFolderFallback]);
 
   const handleSelectFolder = useCallback((id: string) => {
     setActiveFolderId(id);
@@ -139,9 +213,28 @@ export default function App() {
   const hasAnyContent = videos.length > 0 || images.length > 0;
 
   return (
-    <div className="flex flex-col h-screen bg-[#0a0a0f] text-slate-200 overflow-hidden">
+    <div
+      className={`flex flex-col h-screen bg-[#0a0a0f] text-slate-200 overflow-hidden relative ${isDragging ? 'ring-2 ring-inset ring-cyan-500' : ''}`}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <div className="ambient-orb-1" />
       <div className="ambient-orb-2" />
+
+      {/* Drag & drop overlay */}
+      {isDragging && (
+        <div className="absolute inset-0 z-[300] flex items-center justify-center bg-cyan-950/80 backdrop-blur-sm pointer-events-none">
+          <div className="flex flex-col items-center gap-4 text-cyan-300">
+            <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+            </svg>
+            <p className="text-xl font-semibold">Drop folder here</p>
+            <p className="text-sm text-cyan-400/70">Videos and images will be loaded automatically</p>
+          </div>
+        </div>
+      )}
 
       {!splashDone && <SplashScreen onDone={() => setSplashDone(true)} />}
 
@@ -452,6 +545,7 @@ export default function App() {
       {/* Video Player */}
       {activeVideo && (
         <VideoPlayer
+          key={activeVideo.id}
           video={activeVideo}
           onClose={handleClose}
           onPrev={handlePrev}
@@ -497,6 +591,9 @@ export default function App() {
           onSelectRight={setSplitscreenRight}
         />
       )}
+
+      {/* Keyboard Shortcuts Modal */}
+      {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
     </div>
   );
 }

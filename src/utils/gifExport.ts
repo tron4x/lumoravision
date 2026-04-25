@@ -40,8 +40,12 @@ export async function exportGif(
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = gifHeight;
-  const ctx = canvas.getContext('2d')!;
-  
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not get canvas 2D context');
+
+  // Remember original position so we can restore it after export
+  const originalTime = video.currentTime;
+
   // Create GIF encoder with gif.js
   const gif = new GIF({
     workers: 2,
@@ -74,20 +78,22 @@ export async function exportGif(
     onProgress?.(((i + 1) / frameCount) * 50); // 0-50% for capturing
   }
   
-  // Render GIF
+  // Render GIF and restore original playback position when done
   return new Promise((resolve, reject) => {
     gif.on('progress', (p: number) => {
       onProgress?.(50 + p * 50); // 50-100% for rendering
     });
-    
+
     gif.on('finished', (blob: Blob) => {
+      video.currentTime = originalTime; // restore position
       resolve(blob);
     });
-    
+
     gif.on('error', (err: Error) => {
+      video.currentTime = originalTime; // restore even on error
       reject(err);
     });
-    
+
     gif.render();
   });
 }
