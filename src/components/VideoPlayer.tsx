@@ -433,7 +433,7 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
             {/* GIF Export button */}
             <button
               onClick={() => { 
-                setShowGifPanel(p => !p); 
+                setShowGifPanel(p => !p);
                 setShowScreenshotPanel(false);
                 if (isPlaying) { videoRef.current?.pause(); setIsPlaying(false); }
                 // Set default range from current position

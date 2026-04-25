@@ -13,6 +13,7 @@ import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { Storyboard } from './components/Storyboard';
 import { SplitscreenPlayer } from './components/SplitscreenPlayer';
+import { DirectorMode } from './components/DirectorMode';
 import { PlaylistItem } from './components/PlaylistItem';
 import { formatFileSize } from './utils/format';
 import type { VideoFile, ImageFile, ViewMode } from './types/video';
@@ -48,10 +49,11 @@ export default function App() {
   const [playlist, setPlaylist] = useState<VideoFile[]>([]);
   const [playlistOpen, setPlaylistOpen] = useState(false);
 
-  // Storyboard & Splitscreen state
+  // Storyboard & Splitscreen & Director state
   const [storyboardVideo, setStoryboardVideo] = useState<VideoFile | null>(null);
   const [splitscreenLeft, setSplitscreenLeft] = useState<VideoFile | null>(null);
   const [splitscreenRight, setSplitscreenRight] = useState<VideoFile | null>(null);
+  const [directorOpen, setDirectorOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -266,6 +268,7 @@ export default function App() {
             : () => fileInputRef.current?.click()
           : undefined}
         onInfo={() => setShowInfo(true)}
+        onDirector={filteredVideos.length > 0 ? () => setDirectorOpen(true) : undefined}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -589,6 +592,14 @@ export default function App() {
             setSplitscreenRight(null);
           }}
           onSelectRight={setSplitscreenRight}
+        />
+      )}
+
+      {/* Director Mode */}
+      {directorOpen && (
+        <DirectorMode
+          videos={filteredVideos}
+          onClose={() => setDirectorOpen(false)}
         />
       )}
 

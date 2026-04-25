@@ -30,12 +30,13 @@
 Lumoravision is built to be ready instantly — no setup, no accounts, no waiting:
 
 - 🚫 **No upload, no server** – your files never leave your computer
-- ⚡ **Lightning-fast thumbnails** – canvas-generated at native resolution, 
- <br>cached in memory, lazy-loaded via IntersectionObserver
+- ⚡ **Lightning-fast thumbnails** – canvas-generated at native resolution,
+  <br>cached in memory, lazy-loaded via IntersectionObserver
 - 👁️ **Hover preview** – videos start playing automatically on hover after 150 ms, no click needed
 - ⌨️ **Keyboard-first** – all major actions accessible via shortcuts
 - 🔍 **Instant search** – filters videos and images in real time as you type
 - 💾 **Persistent folders** – automatically restored on next launch *(browser-dependent, see below)*
+- 📂 **Drag & Drop** – drag any folder directly onto the app window to open it instantly
 
 ---
 
@@ -45,10 +46,10 @@ Lumoravision is built to be ready instantly — no setup, no accounts, no waitin
 <summary><strong>📁 File Management</strong></summary>
 <br/>
 
-- Open local folders via the native OS dialog
+- Open local folders via the native OS dialog or by **dragging a folder** onto the app window
 - Manage multiple folders simultaneously in the sidebar
 - Sidebar shows folder name, video count and a "needs reopen" warning (amber) for browsers that lost access after reload
-- Rescan a folder to pick up newly added files
+- Rescan a folder to pick up newly added files without reopening
 - Sort by name, date, file size or video duration
 - Real-time search across all files in the active folder
 
@@ -89,8 +90,12 @@ Lumoravision is built to be ready instantly — no setup, no accounts, no waitin
 </details>
 
 <details>
-<summary><strong>⌨️ Keyboard Shortcuts (Video Player)</strong></summary>
+<summary><strong>⌨️ Keyboard Shortcuts</strong></summary>
 <br/>
+
+Press `?` anywhere in the app to open the **Keyboard Shortcuts** overlay.
+
+**Video Player**
 
 | Key | Action |
 |:---|:---|
@@ -104,6 +109,19 @@ Lumoravision is built to be ready instantly — no setup, no accounts, no waitin
 | `,` / `.` | Step one frame back / forward |
 | `S` | Save screenshot (PNG) |
 | `Esc` | Close player |
+
+**Editor**
+
+| Key | Action |
+|:---|:---|
+| `Space` | Play / Pause current clip |
+| `Esc` | Close picker or close Editor |
+
+**Global**
+
+| Key | Action |
+|:---|:---|
+| `?` | Toggle keyboard shortcuts overlay |
 
 </details>
 
@@ -134,12 +152,57 @@ Lumoravision is built to be ready instantly — no setup, no accounts, no waitin
 </details>
 
 <details>
+<summary><strong>🎬 Editor (Director Mode)</strong></summary>
+<br/>
+
+The **Editor** is a browser-based non-linear clip sequencer. Open it via the **Editor** button in the toolbar (visible when videos are loaded).
+
+**Timeline**
+- Add any video from the current folder to the timeline via the **Add Clip** button
+- Reorder clips with the up/down arrows
+- Remove individual clips with the ✕ button
+- Chapter strip at the bottom shows all clips as thumbnails for quick navigation
+
+**Transitions**
+Between every two clips you can choose a transition:
+
+| Transition | Effect |
+|:---|:---|
+| ✂️ Cut | Instant hard cut |
+| 🌅 Fade | Fade to black and back |
+| 🔀 Dissolve | Quick cross-dissolve |
+| 🔍 Zoom In | Zoom-in push |
+| ⬅️ Slide Left | Slide out left, slide in right |
+| ➡️ Slide Right | Slide out right, slide in left |
+| ⚡ Flash | White flash cut |
+
+**Trim & Scene Detection**
+- Each clip has an **IN / OUT trim panel** with range sliders
+- **Detect Scenes** button runs automatic scene detection on the clip using Canvas pixel analysis — detected scenes appear as clickable thumbnails to set IN/OUT points instantly
+
+**Playback**
+- Preview the full sequence with transitions in the built-in player
+- `Space` to play/pause, `Esc` to close the picker or the Editor
+- Clip counter and total duration shown in the title bar
+
+**GIF Export**
+- Click **Export GIF** in the title bar to open the export panel
+- Configure **FPS** (6 / 10 / 15 / 20) and **Width** (320 / 480 / 640 / 800 px)
+- The full IN→OUT duration of each clip is used automatically — no manual time limit needed
+- A progress bar shows frame capture (0–60%) and GIF encoding (60–100%) per clip
+- **Cancel** button to abort at any time
+- The finished GIF is downloaded automatically as `editor-export-[timestamp].gif`
+- All processing runs entirely in the browser via gif.js Web Workers — no server involved
+
+</details>
+
+<details>
 <summary><strong>🎵 Playlist</strong></summary>
 <br/>
 
 - Add individual videos to the playlist via the `+` button on each card or list row
 - "Add all N videos" shortcut to queue the entire current view
-- Playlist panel (sidebar, right side) with thumbnails, drag-to-reorder-ready list
+- Playlist panel (sidebar, right side) with thumbnails
 - Play / Clear buttons in the panel header
 - If no playlist is active, the player uses all filtered videos as the play queue automatically
 
@@ -164,6 +227,7 @@ Lumoravision is built to be ready instantly — no setup, no accounts, no waitin
 - Switchable grid / list layout
 - Fully responsive (2–7 column grid adapts to screen width)
 - Stagger animation on card load
+- Drag & drop overlay with visual feedback when dragging a folder onto the window
 
 </details>
 
@@ -227,6 +291,7 @@ Output goes to `dist/` — ready to deploy on any static host (GitHub Pages, Net
 | Thumbnails | HTML5 Canvas API (lazy, IntersectionObserver) |
 | Video | HTML5 Video API (native, no memory leaks) |
 | GIF Export | gif.js (Web Worker, runs entirely in the browser) |
+| Scene Detection | Canvas pixel-diff analysis (no external library) |
 
 ---
 
@@ -241,11 +306,13 @@ src/
 │   ├── ImageCard.tsx          # Image grid card
 │   ├── ImageViewer.tsx        # Full-screen image viewer
 │   ├── Sidebar.tsx            # Folder navigation
-│   ├── Toolbar.tsx            # Search, sort, view toggle
+│   ├── Toolbar.tsx            # Search, sort, view toggle, Editor button
 │   ├── Storyboard.tsx         # Frame overview & export
 │   ├── SplitscreenPlayer.tsx  # Side-by-side video comparison
+│   ├── DirectorMode.tsx       # Editor: clip sequencer + GIF export
 │   ├── PlaylistItem.tsx       # Playlist panel item
 │   ├── SplashScreen.tsx       # Animated intro
+│   ├── ShortcutsModal.tsx     # Keyboard shortcuts overlay (press ?)
 │   └── InfoModal.tsx          # About dialog
 ├── hooks/
 │   ├── useFileSystem.ts       # Folder reading + persistence
@@ -254,7 +321,7 @@ src/
 ├── utils/
 │   ├── format.ts              # File size, duration, date formatting
 │   ├── gifExport.ts           # GIF export via gif.js
-│   └── sceneDetection.ts      # Auto chapter detection
+│   └── sceneDetection.ts      # Auto chapter / scene detection
 └── types/
     └── video.ts               # TypeScript types
 ```

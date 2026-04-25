@@ -216,6 +216,32 @@ export function VideoCard({ video, onPlay, onDurationLoaded, onAddToPlaylist, in
         <div className={`absolute top-2 left-2 ${extColor} text-white text-xs px-2 py-0.5 rounded-md font-bold uppercase z-20`}>
           {video.extension}
         </div>
+
+        {/* Action buttons — top right overlay, visible on hover */}
+        <div className="absolute top-2 right-2 flex items-center gap-1 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          {onStoryboard && (
+            <button
+              onClick={e => { e.stopPropagation(); onStoryboard(video); }}
+              className="w-7 h-7 rounded-lg bg-black/60 backdrop-blur-sm flex items-center justify-center text-white hover:bg-emerald-600 transition-colors"
+              title="Storyboard"
+            >
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/>
+              </svg>
+            </button>
+          )}
+          {onSplitscreen && (
+            <button
+              onClick={e => { e.stopPropagation(); onSplitscreen(video); }}
+              className="w-7 h-7 rounded-lg bg-black/60 backdrop-blur-sm flex items-center justify-center text-white hover:bg-purple-600 transition-colors"
+              title="Splitscreen"
+            >
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M3 5v14h8V5H3zm10 0v14h8V5h-8z"/>
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Info */}
@@ -228,34 +254,12 @@ export function VideoCard({ video, onPlay, onDurationLoaded, onAddToPlaylist, in
         </h3>
         <div className="flex items-center justify-between mt-1.5">
           <span className="text-xs text-slate-500">{formatFileSize(video.size)}</span>
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-slate-600 mr-1">{formatDate(video.lastModified)}</span>
-            {onStoryboard && (
-              <button
-                onClick={e => { e.stopPropagation(); onStoryboard(video); }}
-                className="w-5 h-5 rounded flex items-center justify-center text-slate-600 opacity-0 group-hover:opacity-100 hover:text-emerald-400 transition-all"
-                title="Storyboard"
-              >
-                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/>
-                </svg>
-              </button>
-            )}
-            {onSplitscreen && (
-              <button
-                onClick={e => { e.stopPropagation(); onSplitscreen(video); }}
-                className="w-5 h-5 rounded flex items-center justify-center text-slate-600 opacity-0 group-hover:opacity-100 hover:text-purple-400 transition-all"
-                title="Splitscreen"
-              >
-                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M3 5v14h8V5H3zm10 0v14h8V5h-8z"/>
-                </svg>
-              </button>
-            )}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-slate-600">{formatDate(video.lastModified)}</span>
             {onAddToPlaylist && (
               <button
                 onClick={e => { e.stopPropagation(); onAddToPlaylist(video); }}
-                className={`w-5 h-5 rounded flex items-center justify-center transition-all ${inPlaylist ? 'text-cyan-400' : 'text-slate-600 opacity-0 group-hover:opacity-100 hover:text-cyan-400'}`}
+                className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${inPlaylist ? 'text-cyan-400 bg-cyan-500/10' : 'text-slate-600 opacity-0 group-hover:opacity-100 hover:text-cyan-400 hover:bg-slate-800'}`}
                 title={inPlaylist ? 'In playlist' : 'Add to playlist'}
               >
                 <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">

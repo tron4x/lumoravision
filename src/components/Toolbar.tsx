@@ -11,6 +11,7 @@ interface ToolbarProps {
   onViewModeChange: (mode: ViewMode) => void;
   onRescan?: () => void;
   onInfo: () => void;
+  onDirector?: () => void;
 }
 
 function SortButton({
@@ -59,6 +60,7 @@ export function Toolbar({
   onViewModeChange,
   onRescan,
   onInfo,
+  onDirector,
 }: ToolbarProps) {
   return (
     <header className="flex-none backdrop-blur-xl px-5 py-3" style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.08) 0%, rgba(15,23,42,0.92) 40%, rgba(2,6,23,0.95) 100%)', borderBottom: '1px solid rgba(6,182,212,0.15)', boxShadow: '0 1px 30px rgba(6,182,212,0.08), 0 4px 20px rgba(0,0,0,0.4)' }}>
@@ -145,6 +147,20 @@ export function Toolbar({
               </svg>
             </button>
           </div>
+        )}
+
+        {/* Director Mode button */}
+        {onDirector && videoCount > 0 && (
+          <button
+            onClick={onDirector}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 hover:text-amber-300 border border-amber-500/30 text-xs font-medium transition-colors flex-none"
+            title="Editor"
+          >
+            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M18 3v2h-2V3H8v2H6V3H4v18h2v-2h2v2h8v-2h2v2h2V3h-2zM8 17H6v-2h2v2zm0-4H6v-2h2v2zm0-4H6V7h2v2zm10 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V7h2v2z"/>
+            </svg>
+            Editor
+          </button>
         )}
 
         {/* Rescan button – only shown when a folder is active */}
