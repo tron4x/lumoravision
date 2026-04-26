@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/lumoravision.png" alt="Lumoravision Logo" width="180" />
+  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/lumoravision.png" alt="Lumoravision Logo" width="180" />
 </p>
 
 <h1 align="center">✦ Lumoravision</h1>
@@ -41,23 +41,23 @@
 ---
 
 <p align="center">
-  <img src="public/app.png" alt="Lumoravision – Media Library" width="900" />
+  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/app.png" alt="Lumoravision – Media Library" width="900" />
 </p>
 
 <p align="center">
-  <img src="public/player.png" alt="Lumoravision – Video Player" width="440" />
+  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/player.png" alt="Lumoravision – Video Player" width="440" />
   &nbsp;
-  <img src="public/editor.png" alt="Lumoravision – Editor" width="440" />
+  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/editor.png" alt="Lumoravision – Editor" width="440" />
 </p>
 
 <p align="center">
-  <img src="public/splitscreen.png" alt="Lumoravision – Splitscreen" width="440" />
+  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/splitscreen.png" alt="Lumoravision – Splitscreen" width="440" />
   &nbsp;
-  <img src="public/gif.png" alt="Lumoravision – GIF Export" width="440" />
+  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/gif.png" alt="Lumoravision – GIF Export" width="440" />
 </p>
 
 <p align="center">
-  <img src="public/storyboard.png" alt="Lumoravision – Storyboard" width="900" />
+  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/storyboard.png" alt="Lumoravision – Storyboard" width="900" />
 </p>
 
 ---
