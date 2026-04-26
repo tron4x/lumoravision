@@ -1,3 +1,5 @@
+import pkg from '../../package.json';
+
 interface InfoModalProps {
   onClose: () => void;
 }
@@ -36,6 +38,7 @@ export function InfoModal({ onClose }: InfoModalProps) {
         {/* Info text */}
         <div className="px-6 py-5 flex flex-col items-center gap-3 border-t border-slate-800/60">
           <span className="text-xs text-slate-500 tracking-widest uppercase">Modern Media Player</span>
+          <div className="text-xs text-slate-500 font-mono">v{pkg.version}</div>
           <div className="text-xs text-slate-600">Videos · Images · Screenshots · GIF Export</div>
 
           <div className="flex flex-col items-center gap-1.5 mt-1">

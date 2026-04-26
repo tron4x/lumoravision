@@ -53,6 +53,29 @@
 
 ---
 
+## 🔒 Privacy & How It Works
+
+> [!IMPORTANT]
+> **Lumoravision does not upload, store or transmit any of your files — ever.**
+
+Here is exactly what happens when you use the app:
+
+| What happens | Detail |
+|:---|:---|
+| You open a folder | The browser asks for permission to **read** that folder — nothing is copied or moved |
+| Thumbnails are generated | Done entirely in your browser via the **Canvas API** — no server involved |
+| Videos are played | Streamed directly from your local disk via the **HTML5 Video API** — no upload |
+| GIFs are exported | Encoded 100% in your browser via a **Web Worker** — downloaded directly to your machine |
+| Folder paths are saved | Stored in your browser's **IndexedDB** (local only) so folders reopen after reload |
+| **Nothing is sent anywhere** | No analytics, no telemetry, no cloud, no database, no backend |
+
+**There is no server. There is no database. There is no account.**  
+Your files stay exactly where they are — on your hard drive.
+
+The only network requests Lumoravision ever makes are to load the app itself (HTML/CSS/JS). After that, everything runs offline.
+
+---
+
 ## 🆚 Lumoravision vs. the Alternatives
 
 | Feature | Lumoravision | Plex | VLC | Finder / Explorer |
