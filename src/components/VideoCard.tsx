@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import type { VideoFile } from '../types/video';
 import { formatFileSize, formatDuration, formatDate } from '../utils/format';
+import { runThumbJob } from '../utils/thumbQueue';
 
 interface VideoCardProps {
   video: VideoFile;
@@ -64,9 +65,9 @@ function generateThumbnail(url: string): Promise<{ dataUrl: string; duration: nu
       }
     };
 
-    video.onerror = () => { cleanup(); reject(new Error('Video load error')); };
+    video.onerror = () => { clearTimeout(timeout); cleanup(); reject(new Error('Video load error')); };
 
-    // Timeout fallback
+    // Timeout fallback – cleared on seeked OR error
     const timeout = setTimeout(() => { cleanup(); reject(new Error('Timeout')); }, 15000);
     video.addEventListener('seeked', () => clearTimeout(timeout), { once: true });
 
@@ -105,20 +106,22 @@ export function VideoCard({ video, onPlay, onDurationLoaded, onAddToPlaylist, in
     if (!inViewport || thumbnail || thumbnailError || generatingRef.current) return;
     generatingRef.current = true;
 
-    generateThumbnail(video.url)
-      .then(({ dataUrl, duration }) => {
-        thumbnailCache.set(video.id, dataUrl);
-        setThumbnail(dataUrl);
-        if (duration && isFinite(duration)) {
-          onDurationLoaded(video.id, duration);
-        }
-      })
-      .catch(() => {
-        setThumbnailError(true);
-      })
-      .finally(() => {
-        generatingRef.current = false;
-      });
+    runThumbJob(() =>
+      generateThumbnail(video.url)
+        .then(({ dataUrl, duration }) => {
+          thumbnailCache.set(video.id, dataUrl);
+          setThumbnail(dataUrl);
+          if (duration && isFinite(duration)) {
+            onDurationLoaded(video.id, duration);
+          }
+        })
+        .catch(() => {
+          setThumbnailError(true);
+        })
+        .finally(() => {
+          generatingRef.current = false;
+        })
+    );
   }, [inViewport, thumbnail, thumbnailError, video.id, video.url, onDurationLoaded]);
 
   const handleMouseEnter = useCallback(() => {

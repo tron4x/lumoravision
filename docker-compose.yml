@@ -1,0 +1,16 @@
+services:
+  lumoravision:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lumoravision:latest
+    container_name: lumoravision
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

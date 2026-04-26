@@ -53,6 +53,22 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
   const isPlayingRef = useRef(isPlaying);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
+  // Throttle currentTime updates to ~4x/s to avoid 30 React re-renders/s
+  const rafRef = useRef<number | null>(null);
+  const lastTimeUpdateRef = useRef(0);
+  const handleTimeUpdate = useCallback(() => {
+    const now = performance.now();
+    if (now - lastTimeUpdateRef.current < 250) return; // max 4 updates/s
+    lastTimeUpdateRef.current = now;
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      const vid = videoRef.current;
+      if (vid) setCurrentTime(vid.currentTime);
+    });
+  }, []);
+  useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); }, []);
+
   // Restore saved position when video loads, then start playing
   useEffect(() => {
     const vid = videoRef.current;
@@ -64,8 +80,8 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
       if (savedTime > 0 && vid.readyState >= 1) {
         vid.currentTime = savedTime;
       } else if (savedTime > 0) {
-        const onMeta = () => { vid.currentTime = savedTime; vid.removeEventListener('loadedmetadata', onMeta); };
-        vid.addEventListener('loadedmetadata', onMeta);
+        // Use { once: true } so the listener is always removed, even on error
+        vid.addEventListener('loadedmetadata', () => { vid.currentTime = savedTime; }, { once: true });
       }
       vid.play().then(() => setIsPlaying(true)).catch(() => {});
     });
@@ -309,7 +325,7 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
             ref={videoRef}
             src={video.url}
             className="w-full h-full object-contain"
-            onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime ?? 0)}
+            onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={() => setDuration(videoRef.current?.duration ?? 0)}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}

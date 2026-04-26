@@ -343,7 +343,10 @@ export function SplitscreenPlayer({
             src={videoLeft.url}
             loop={isLooping}
             className="w-full h-full object-contain"
-            onTimeUpdate={() => setLeftTime(leftRef.current?.currentTime ?? 0)}
+            onTimeUpdate={() => {
+              const v = leftRef.current;
+              if (v && Math.abs(v.currentTime - leftTime) > 0.25) setLeftTime(v.currentTime);
+            }}
             onLoadedMetadata={() => setLeftDuration(leftRef.current?.duration ?? 0)}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
@@ -399,7 +402,10 @@ export function SplitscreenPlayer({
                 src={videoRight.url}
                 loop={isLooping}
                 className="w-full h-full object-contain"
-                onTimeUpdate={() => setRightTime(rightRef.current?.currentTime ?? 0)}
+                onTimeUpdate={() => {
+                  const v = rightRef.current;
+                  if (v && Math.abs(v.currentTime - rightTime) > 0.25) setRightTime(v.currentTime);
+                }}
                 onLoadedMetadata={() => setRightDuration(rightRef.current?.duration ?? 0)}
                 onClick={togglePlay}
                 muted={rightMuted}

@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import type { VideoFile } from '../types/video';
 import { formatFileSize, formatDuration } from '../utils/format';
+import { runThumbJob } from '../utils/thumbQueue';
 
 interface VideoListRowProps {
   video: VideoFile;
@@ -80,17 +81,19 @@ export function VideoListRow({
     return () => observer.disconnect();
   }, []);
 
-  // Generate thumbnail
+  // Generate thumbnail (throttled via shared queue)
   useEffect(() => {
     if (!inViewport || thumbnail || thumbnailError || generatingRef.current) return;
     generatingRef.current = true;
-    generateThumbnail(video.url)
-      .then(({ dataUrl }) => {
-        thumbnailCache.set(video.id, dataUrl);
-        setThumbnail(dataUrl);
-      })
-      .catch(() => setThumbnailError(true))
-      .finally(() => { generatingRef.current = false; });
+    runThumbJob(() =>
+      generateThumbnail(video.url)
+        .then(({ dataUrl }) => {
+          thumbnailCache.set(video.id, dataUrl);
+          setThumbnail(dataUrl);
+        })
+        .catch(() => setThumbnailError(true))
+        .finally(() => { generatingRef.current = false; })
+    );
   }, [inViewport, thumbnail, thumbnailError, video.id, video.url]);
 
   const handleMouseEnter = useCallback(() => {

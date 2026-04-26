@@ -63,7 +63,7 @@ export function Toolbar({
   onDirector,
 }: ToolbarProps) {
   return (
-    <header className="flex-none backdrop-blur-xl px-5 py-3" style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.08) 0%, rgba(15,23,42,0.92) 40%, rgba(2,6,23,0.95) 100%)', borderBottom: '1px solid rgba(6,182,212,0.15)', boxShadow: '0 1px 30px rgba(6,182,212,0.08), 0 4px 20px rgba(0,0,0,0.4)' }}>
+    <header className="flex-none px-5 py-3" style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.08) 0%, rgba(15,23,42,0.95) 40%, rgba(2,6,23,0.98) 100%)', borderBottom: '1px solid rgba(6,182,212,0.15)', boxShadow: '0 1px 30px rgba(6,182,212,0.08), 0 4px 20px rgba(0,0,0,0.4)' }}>
       <div className="flex items-center gap-4">
         {/* Logo */}
         <div className="flex items-center gap-2 flex-none">

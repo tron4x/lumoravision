@@ -5,6 +5,7 @@ import { detectScenes } from '../utils/sceneDetection';
 import type { SceneChapter } from '../utils/sceneDetection';
 import GIF from 'gif.js';
 import { downloadBlob } from '../utils/gifExport';
+import { runThumbJob } from '../utils/thumbQueue';
 
 type TransitionType = 'cut' | 'fade' | 'dissolve' | 'zoom' | 'slide-left' | 'slide-right' | 'flash';
 
@@ -26,20 +27,25 @@ const thumbCache = new Map<string, string>();
 
 function getThumb(video: VideoFile, cb: (url: string) => void) {
   if (thumbCache.has(video.id)) { cb(thumbCache.get(video.id)!); return; }
-  const v = document.createElement('video');
-  v.muted = true; v.preload = 'auto'; v.playsInline = true;
-  const capture = () => {
-    const c = document.createElement('canvas'); c.width = 160; c.height = 90;
-    const ctx = c.getContext('2d'); if (!ctx) return;
-    ctx.drawImage(v, 0, 0, 160, 90);
-    const url = c.toDataURL('image/jpeg', 0.75);
-    thumbCache.set(video.id, url);
-    cb(url);
-    v.src = ''; v.load();
-  };
-  v.onloadeddata = () => { if (isFinite(v.duration) && v.duration > 0) v.currentTime = v.duration * 0.1; else capture(); };
-  v.onseeked = capture;
-  v.src = video.url; v.load();
+  runThumbJob(() => new Promise<void>(resolve => {
+    const v = document.createElement('video');
+    v.muted = true; v.preload = 'auto'; v.playsInline = true;
+    const capture = () => {
+      v.removeEventListener('seeked', capture);
+      const c = document.createElement('canvas'); c.width = 160; c.height = 90;
+      const ctx = c.getContext('2d'); if (!ctx) { v.src = ''; v.load(); resolve(); return; }
+      ctx.drawImage(v, 0, 0, 160, 90);
+      const url = c.toDataURL('image/jpeg', 0.75);
+      thumbCache.set(video.id, url);
+      cb(url);
+      v.src = ''; v.load();
+      resolve();
+    };
+    v.onloadeddata = () => { if (isFinite(v.duration) && v.duration > 0) v.currentTime = v.duration * 0.1; else capture(); };
+    v.addEventListener('seeked', capture, { once: true });
+    v.onerror = () => { v.src = ''; v.load(); resolve(); };
+    v.src = video.url; v.load();
+  }));
 }
 
 function useThumb(video: VideoFile) {
@@ -85,6 +91,203 @@ function ClipDur({ clip }: { clip: Clip }) {
   return <span className="text-slate-500 text-xs font-mono">{formatDuration(Math.max(0, end - clip.startTime))}</span>;
 }
 
+// ── Frame Scrubber ────────────────────────────────────────────────────────────
+const FRAME_STEP = 1 / 30;
+
+function FrameScrubber({ clip, dur, onSetIn, onSetOut }: {
+  clip: Clip; dur: number;
+  onSetIn: (t: number) => void;
+  onSetOut: (t: number) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scrubVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [scrubTime, setScrubTime] = useState(clip.startTime);
+  const [seeking, setSeeking] = useState(false);
+  const seekingRef = useRef(false);
+  // Track which clip.id we last drew so we can re-draw on clip change
+  const lastClipIdRef = useRef<string>('');
+
+  // Create hidden video element once per clip URL
+  useEffect(() => {
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    v.src = clip.video.url; v.load();
+    scrubVideoRef.current = v;
+    return () => { v.src = ''; v.load(); scrubVideoRef.current = null; };
+  }, [clip.video.url]);
+
+  // Pending seek target — if a new seek comes in while one is in flight, we
+  // store the latest target and re-seek once the current one completes.
+  const pendingSeekRef = useRef<number | null>(null);
+
+  // Draw a frame onto the canvas — uses video's native resolution, falls back to 960×540
+  const drawFrame = useCallback((v: HTMLVideoElement, canvas: HTMLCanvasElement) => {
+    const w = v.videoWidth || 960;
+    const h = v.videoHeight || 540;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (ctx) ctx.drawImage(v, 0, 0, w, h);
+  }, []);
+
+  // Seek and draw frame on canvas
+  const seekAndDraw = useCallback((t: number) => {
+    const v = scrubVideoRef.current;
+    const canvas = canvasRef.current;
+    if (!v || !canvas) return;
+
+    if (seekingRef.current) {
+      // Already seeking — queue the latest target, will be picked up on seeked
+      pendingSeekRef.current = t;
+      return;
+    }
+
+    seekingRef.current = true;
+    setSeeking(true);
+
+    const onSeeked = () => {
+      v.removeEventListener('seeked', onSeeked);
+      drawFrame(v, canvas);
+
+      // If another seek was requested while we were busy, do it now
+      const next = pendingSeekRef.current;
+      if (next !== null) {
+        pendingSeekRef.current = null;
+        const onSeeked2 = () => {
+          v.removeEventListener('seeked', onSeeked2);
+          drawFrame(v, canvas);
+          seekingRef.current = false;
+          setSeeking(false);
+        };
+        v.addEventListener('seeked', onSeeked2);
+        v.currentTime = next;
+      } else {
+        seekingRef.current = false;
+        setSeeking(false);
+      }
+    };
+
+    v.addEventListener('seeked', onSeeked);
+    v.currentTime = t;
+  }, [drawFrame]);
+
+  // Draw initial frame when component mounts or clip changes
+  useEffect(() => {
+    if (lastClipIdRef.current === clip.id) return;
+    lastClipIdRef.current = clip.id;
+    setScrubTime(clip.startTime);
+
+    // Wait for video to be ready, then seek + draw
+    const v = scrubVideoRef.current;
+    if (!v) return;
+
+    const doSeek = () => seekAndDraw(clip.startTime);
+
+    if (v.readyState >= 1) {
+      // Metadata already loaded — defer one frame so canvas is in DOM
+      const id = requestAnimationFrame(doSeek);
+      return () => cancelAnimationFrame(id);
+    } else {
+      v.addEventListener('loadedmetadata', doSeek, { once: true });
+      return () => v.removeEventListener('loadedmetadata', doSeek);
+    }
+  }, [clip.id, clip.startTime, seekAndDraw]);
+
+  const step = (delta: number) => {
+    const next = Math.max(0, Math.min(dur, scrubTime + delta));
+    setScrubTime(next);
+    seekAndDraw(next);
+  };
+
+  const handleSlider = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const t = parseFloat(e.target.value);
+    setScrubTime(t);
+    seekAndDraw(t);
+  };
+
+  return (
+    <div className="mt-2 rounded-xl overflow-hidden border border-slate-700/60 bg-slate-900">
+      {/* Canvas preview — max 160px tall so it doesn't eat the whole panel */}
+      <div className="relative bg-black" style={{ height: '160px' }}>
+        <canvas ref={canvasRef} className="w-full h-full object-contain" />
+        {seeking && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+            <div className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+        {/* Timecode overlay */}
+        <div className="absolute bottom-1.5 left-1.5 bg-black/80 text-amber-400 text-xs font-mono px-2 py-0.5 rounded-md">
+          {formatDuration(scrubTime)}
+        </div>
+        {/* IN/OUT markers */}
+        <div className="absolute bottom-1.5 right-1.5 flex gap-1">
+          {Math.abs(scrubTime - clip.startTime) < FRAME_STEP + 0.001 && (
+            <span className="bg-green-600/80 text-white text-xs px-1.5 py-0.5 rounded font-bold">IN</span>
+          )}
+          {Math.abs(scrubTime - (clip.endTime > 0 ? clip.endTime : dur)) < FRAME_STEP + 0.001 && (
+            <span className="bg-red-600/80 text-white text-xs px-1.5 py-0.5 rounded font-bold">OUT</span>
+          )}
+        </div>
+      </div>
+
+      {/* Scrub slider */}
+      <div className="px-3 pt-2 pb-1">
+        <input
+          type="range" min={0} max={dur} step={FRAME_STEP}
+          value={scrubTime}
+          onChange={handleSlider}
+          className="w-full accent-amber-500 cursor-pointer"
+        />
+      </div>
+
+      {/* Frame step buttons + IN/OUT setters */}
+      <div className="flex items-center gap-1 px-3 pb-2">
+        {/* Step back 1s */}
+        <button onClick={() => step(-1)}
+          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs rounded-lg transition-colors" title="-1s">
+          −1s
+        </button>
+        {/* Step back 1 frame */}
+        <button onClick={() => step(-FRAME_STEP)}
+          className="w-7 h-7 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center justify-center transition-colors" title="Previous frame (1/30s)">
+          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+        </button>
+        {/* Step forward 1 frame */}
+        <button onClick={() => step(FRAME_STEP)}
+          className="w-7 h-7 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center justify-center transition-colors" title="Next frame (1/30s)">
+          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+        </button>
+        {/* Step forward 1s */}
+        <button onClick={() => step(1)}
+          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs rounded-lg transition-colors" title="+1s">
+          +1s
+        </button>
+
+        <div className="flex-1" />
+
+        {/* Set IN */}
+        <button
+          onClick={() => onSetIn(scrubTime)}
+          className="flex items-center gap-1 px-2 py-1 bg-green-600/20 hover:bg-green-600/40 text-green-400 text-xs font-semibold rounded-lg border border-green-500/30 transition-colors"
+          title="Set IN point to current frame"
+        >
+          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+          Set IN
+        </button>
+        {/* Set OUT */}
+        <button
+          onClick={() => onSetOut(scrubTime)}
+          className="flex items-center gap-1 px-2 py-1 bg-red-600/20 hover:bg-red-600/40 text-red-400 text-xs font-semibold rounded-lg border border-red-500/30 transition-colors"
+          title="Set OUT point to current frame"
+        >
+          Set OUT
+          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Trim panel with Scene Detection ──────────────────────────────────────────
 function TrimPanel({ clip, idx, onUpdate, videoRef }: { clip: Clip; idx: number; onUpdate: (idx: number, patch: Partial<Clip>) => void; videoRef: React.RefObject<HTMLVideoElement | null> }) {
   const [dur, setDur] = useState(clip.video.duration ?? 0);
@@ -92,6 +295,7 @@ function TrimPanel({ clip, idx, onUpdate, videoRef }: { clip: Clip; idx: number;
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
   const [analyzed, setAnalyzed] = useState(false);
+  const [showScrubber, setShowScrubber] = useState(false);
   const trimVideoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -125,15 +329,44 @@ function TrimPanel({ clip, idx, onUpdate, videoRef }: { clip: Clip; idx: number;
 
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Trim Clip {idx + 1}</p>
-        {!analyzed && !analyzing && (
-          <button onClick={runDetect}
-            className="flex items-center gap-1 px-2 py-0.5 bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-400 text-xs rounded-lg border border-cyan-500/30 transition-colors">
-            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z"/></svg>
-            Detect Scenes
+        <div className="flex items-center gap-1.5">
+          {/* Frame scrubber toggle */}
+          <button
+            onClick={() => setShowScrubber(p => !p)}
+            className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded-lg border transition-colors ${showScrubber ? 'bg-amber-600/30 text-amber-400 border-amber-500/40' : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'}`}
+            title="Frame-by-frame scrubber"
+          >
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M18 3v2h-2V3H8v2H6V3H4v18h2v-2h2v2h8v-2h2v2h2V3h-2zM8 17H6v-2h2v2zm0-4H6v-2h2v2zm0-4H6V7h2v2zm10 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V7h2v2z"/></svg>
+            Frames
           </button>
-        )}
-        {analyzing && <span className="text-xs text-cyan-400">{analyzeProgress}%</span>}
+          {!analyzed && !analyzing && (
+            <button onClick={runDetect}
+              className="flex items-center gap-1 px-2 py-0.5 bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-400 text-xs rounded-lg border border-cyan-500/30 transition-colors">
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z"/></svg>
+              Scenes
+            </button>
+          )}
+          {analyzing && <span className="text-xs text-cyan-400">{analyzeProgress}%</span>}
+        </div>
       </div>
+
+      {/* Frame scrubber */}
+      {showScrubber && dur > 0 && (
+        <FrameScrubber
+          clip={clip}
+          dur={dur}
+          onSetIn={t => {
+            onUpdate(idx, { startTime: Math.min(t, end - FRAME_STEP) });
+            const vid = videoRef.current;
+            if (vid) vid.currentTime = t;
+          }}
+          onSetOut={t => {
+            onUpdate(idx, { endTime: Math.max(t, clip.startTime + FRAME_STEP) });
+            const vid = videoRef.current;
+            if (vid) vid.currentTime = t;
+          }}
+        />
+      )}
 
       {/* Chapter thumbnails */}
       {chapters.length > 1 && (
@@ -338,7 +571,14 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const isPlayingRef = useRef(false);
   const chainingRef = useRef(false); // true while transitioning between clips
+  const activeIdxRef = useRef(activeIdx);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { activeIdxRef.current = activeIdx; }, [activeIdx]);
+
+  // Throttle time updates to ~4x/s (same as VideoPlayer)
+  const lastTimeUpdateRef = useRef(0);
+  const rafRef = useRef<number | null>(null);
+  useEffect(() => () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); }, []);
 
   const activeClip = clips[activeIdx] ?? null;
 
@@ -384,17 +624,23 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
     setClipDuration(Math.max(0, end - clip.startTime));
   }, [activeIdx, clips]);
 
-  // ── clip end handler ───────────────────────────────────────────────────────
+  // Keep a ref to clips so callbacks always see the latest array without stale closures
+  const clipsRef = useRef(clips);
+  useEffect(() => { clipsRef.current = clips; }, [clips]);
+
+  // ── clip end handler — reads from refs, never stale ────────────────────────
   const handleClipEnd = useCallback(() => {
     const vid = videoRef.current;
     if (!vid) return;
-    const next = activeIdx + 1;
-    if (next >= clips.length) {
+    const currentClips = clipsRef.current;
+    const idx = activeIdxRef.current;
+    const next = idx + 1;
+    if (next >= currentClips.length) {
       vid.pause();
       setIsPlaying(false);
       return;
     }
-    const { transition } = clips[next];
+    const { transition } = currentClips[next];
     chainingRef.current = true;
     isPlayingRef.current = true;
     vid.pause();
@@ -446,18 +692,29 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
       chainingRef.current = false;
       setActiveIdx(next);
     }
-  }, [activeIdx, clips]);
+  // No deps — reads everything from refs
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // ── time update ────────────────────────────────────────────────────────────
+  // ── time update — throttled to ~4x/s, reads from refs, never stale ─────────
   const handleTimeUpdate = useCallback(() => {
-    const vid = videoRef.current;
-    const clip = clips[activeIdx];
-    if (!vid || !clip) return;
-    const t = vid.currentTime;
-    setCurrentTime(Math.max(0, t - clip.startTime));
-    const end = clip.endTime > 0 ? clip.endTime : vid.duration;
-    if (t >= end - 0.1) handleClipEnd();
-  }, [activeIdx, clips, handleClipEnd]);
+    const now = performance.now();
+    if (now - lastTimeUpdateRef.current < 250) return;
+    lastTimeUpdateRef.current = now;
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      const vid = videoRef.current;
+      const idx = activeIdxRef.current;
+      const clip = clipsRef.current[idx];
+      if (!vid || !clip) return;
+      const t = vid.currentTime;
+      setCurrentTime(Math.max(0, t - clip.startTime));
+      const end = clip.endTime > 0 ? clip.endTime : vid.duration;
+      if (t >= end - 0.1) handleClipEnd();
+    });
+  // handleClipEnd is stable (no deps)
+  }, [handleClipEnd]);
 
   // ── play / pause ───────────────────────────────────────────────────────────
   const togglePlay = useCallback(() => {
@@ -582,10 +839,15 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
                   <label className="text-xs text-slate-500">FPS</label>
                   <select value={gifFps} onChange={e => setGifFps(Number(e.target.value))}
                     className="text-xs bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 cursor-pointer">
-                    <option value={6}>6</option>
+                    <option value={5}>5</option>
+                    <option value={8}>8</option>
                     <option value={10}>10</option>
+                    <option value={12}>12</option>
                     <option value={15}>15</option>
                     <option value={20}>20</option>
+                    <option value={24}>24</option>
+                    <option value={25}>25</option>
+                    <option value={30}>30</option>
                   </select>
                 </div>
                 <div className="flex items-center gap-2">
@@ -598,8 +860,18 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
                     <option value={800}>800px</option>
                   </select>
                 </div>
-                <div className="text-xs text-slate-600">
-                  ~{clips.length} clip{clips.length !== 1 ? 's' : ''} · {gifFps} fps · {gifWidth}px · full clip duration
+                <div className="flex flex-col gap-0.5">
+                  <div className="text-xs text-slate-600">
+                    ~{clips.length} clip{clips.length !== 1 ? 's' : ''} · {gifFps} fps · {gifWidth}px · full clip duration
+                  </div>
+                  {gifFps >= 24 && (
+                    <div className="flex items-center gap-1 text-xs text-amber-400">
+                      <svg className="w-3 h-3 flex-none" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                      </svg>
+                      High FPS — export will be slow and file size large. 10–15 fps recommended for GIFs.
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={handleExportGif}
@@ -772,7 +1044,7 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
 
             {/* Controls */}
             {clips.length > 0 && (
-              <div className="flex-none bg-slate-900/90 px-4 py-3 border-t border-slate-800/60">
+              <div className="flex-none bg-slate-900/90 px-4 py-3 border-t border-slate-800/60 overflow-y-auto" style={{ maxHeight: '55vh' }}>
                 {/* Progress bar */}
                 <div
                   className="h-1.5 bg-slate-700 rounded-full mb-3 overflow-hidden cursor-pointer hover:h-2.5 transition-all"

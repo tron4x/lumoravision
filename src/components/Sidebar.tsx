@@ -20,7 +20,7 @@ export function Sidebar({
   isLoading,
 }: SidebarProps) {
   return (
-    <aside className="w-56 flex-none flex flex-col overflow-hidden backdrop-blur-xl" style={{ background: 'linear-gradient(180deg, rgba(6,182,212,0.05) 0%, rgba(15,23,42,0.92) 30%, rgba(2,6,23,0.97) 100%)', borderRight: '1px solid rgba(6,182,212,0.12)', boxShadow: '2px 0 20px rgba(0,0,0,0.3)' }}>
+    <aside className="w-56 flex-none flex flex-col overflow-hidden" style={{ background: 'linear-gradient(180deg, rgba(6,182,212,0.05) 0%, rgba(15,23,42,0.95) 30%, rgba(2,6,23,0.98) 100%)', borderRight: '1px solid rgba(6,182,212,0.12)', boxShadow: '2px 0 20px rgba(0,0,0,0.3)' }}>
       {/* Header */}
       <div className="px-3 py-3 border-b border-white/5">
         <button

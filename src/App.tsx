@@ -14,6 +14,7 @@ import { Sidebar } from './components/Sidebar';
 import { Storyboard } from './components/Storyboard';
 import { SplitscreenPlayer } from './components/SplitscreenPlayer';
 import { DirectorMode } from './components/DirectorMode';
+import { Slideshow } from './components/Slideshow';
 import { PlaylistItem } from './components/PlaylistItem';
 import { formatFileSize } from './utils/format';
 import type { VideoFile, ImageFile, ViewMode } from './types/video';
@@ -49,11 +50,12 @@ export default function App() {
   const [playlist, setPlaylist] = useState<VideoFile[]>([]);
   const [playlistOpen, setPlaylistOpen] = useState(false);
 
-  // Storyboard & Splitscreen & Director state
+  // Storyboard & Splitscreen & Director & Slideshow state
   const [storyboardVideo, setStoryboardVideo] = useState<VideoFile | null>(null);
   const [splitscreenLeft, setSplitscreenLeft] = useState<VideoFile | null>(null);
   const [splitscreenRight, setSplitscreenRight] = useState<VideoFile | null>(null);
   const [directorOpen, setDirectorOpen] = useState(false);
+  const [slideshowStartIndex, setSlideshowStartIndex] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -434,6 +436,16 @@ export default function App() {
                     </svg>
                     <h2 className="text-sm font-semibold text-emerald-400 uppercase tracking-wider">Images</h2>
                     <span className="text-xs text-slate-600 bg-slate-800 px-2 py-0.5 rounded-full">{filteredImages.length}</span>
+                    <button
+                      onClick={() => setSlideshowStartIndex(0)}
+                      className="ml-auto flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-400 hover:text-emerald-400 transition-colors"
+                      title="Start Slideshow"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/>
+                      </svg>
+                      Slideshow
+                    </button>
                   </div>
                   {viewMode === 'grid' ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
@@ -600,6 +612,15 @@ export default function App() {
         <DirectorMode
           videos={filteredVideos}
           onClose={() => setDirectorOpen(false)}
+        />
+      )}
+
+      {/* Slideshow */}
+      {slideshowStartIndex !== null && filteredImages.length > 0 && (
+        <Slideshow
+          images={filteredImages}
+          startIndex={slideshowStartIndex}
+          onClose={() => setSlideshowStartIndex(null)}
         />
       )}
 
