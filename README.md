@@ -72,7 +72,7 @@ Here is exactly what happens when you use the app:
 **There is no server. There is no database. There is no account.**  
 Your files stay exactly where they are — on your hard drive.
 
-The only network requests Lumoravision ever makes are to load the app itself (HTML/CSS/JS). After that, everything runs offline.
+The only network requests Lumoravision ever makes are to load the app itself (HTML/CSS/JS). <br>After that, everything runs offline.
 
 ---
 
