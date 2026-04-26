@@ -24,21 +24,6 @@
   <img src="https://img.shields.io/badge/Made_by-tron4x-FF6B6B?style=for-the-badge&logo=github&logoColor=white" />
 </p>
 
-<p align="center">
-  <a href="https://github.com/tron4x/lumoravision/stargazers">
-    <img src="https://img.shields.io/github/stars/tron4x/lumoravision?style=for-the-badge&logo=github&color=FFD700" alt="GitHub Stars" />
-  </a>
-  <a href="https://github.com/tron4x/lumoravision/forks">
-    <img src="https://img.shields.io/github/forks/tron4x/lumoravision?style=for-the-badge&logo=github&color=06B6D4" alt="GitHub Forks" />
-  </a>
-  <a href="https://github.com/tron4x/lumoravision/issues">
-    <img src="https://img.shields.io/github/issues/tron4x/lumoravision?style=for-the-badge&logo=github&color=FF6B6B" alt="GitHub Issues" />
-  </a>
-  <a href="https://github.com/tron4x/lumoravision/commits/main">
-    <img src="https://img.shields.io/github/last-commit/tron4x/lumoravision?style=for-the-badge&logo=github&color=8B5CF6" alt="Last Commit" />
-  </a>
-</p>
-
 ---
 
 <p align="center">
