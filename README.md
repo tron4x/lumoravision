@@ -27,23 +27,22 @@
 ---
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/app.png" alt="Lumoravision – Media Library" width="900" />
+  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/app.png" alt="Lumoravision – Media Library" width="100%" />
 </p>
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/player.png" alt="Lumoravision – Video Player" width="440" />
-  &nbsp;
-  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/editor.png" alt="Lumoravision – Editor" width="440" />
-</p>
+<table align="center" width="100%" cellspacing="4" cellpadding="0" border="0">
+  <tr>
+    <td width="50%"><img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/player.png" alt="Video Player" width="100%" /></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/editor.png" alt="Editor" width="100%" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/splitscreen.png" alt="Splitscreen" width="100%" /></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/gif.png" alt="GIF Export" width="100%" /></td>
+  </tr>
+</table>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/splitscreen.png" alt="Lumoravision – Splitscreen" width="440" />
-  &nbsp;
-  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/gif.png" alt="Lumoravision – GIF Export" width="440" />
-</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/storyboard.png" alt="Lumoravision – Storyboard" width="900" />
+  <img src="https://raw.githubusercontent.com/tron4x/lumoravision/main/public/storyboard.png" alt="Lumoravision – Storyboard" width="100%" />
 </p>
 
 ---
