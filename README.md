@@ -40,6 +40,28 @@
 
 ---
 
+<p align="center">
+  <img src="public/app.png" alt="Lumoravision – Media Library" width="900" />
+</p>
+
+<p align="center">
+  <img src="public/player.png" alt="Lumoravision – Video Player" width="440" />
+  &nbsp;
+  <img src="public/editor.png" alt="Lumoravision – Editor" width="440" />
+</p>
+
+<p align="center">
+  <img src="public/splitscreen.png" alt="Lumoravision – Splitscreen" width="440" />
+  &nbsp;
+  <img src="public/gif.png" alt="Lumoravision – GIF Export" width="440" />
+</p>
+
+<p align="center">
+  <img src="public/storyboard.png" alt="Lumoravision – Storyboard" width="900" />
+</p>
+
+---
+
 > [!TIP]
 > **No installation. No account. No server. Just open your browser and drop a folder.**
 
