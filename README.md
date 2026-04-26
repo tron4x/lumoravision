@@ -23,6 +23,45 @@
   <img src="https://img.shields.io/badge/Made_by-tron4x-FF6B6B?style=for-the-badge&logo=github&logoColor=white" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/tron4x/lumoravision/stargazers">
+    <img src="https://img.shields.io/github/stars/tron4x/lumoravision?style=for-the-badge&logo=github&color=FFD700" alt="GitHub Stars" />
+  </a>
+  <a href="https://github.com/tron4x/lumoravision/forks">
+    <img src="https://img.shields.io/github/forks/tron4x/lumoravision?style=for-the-badge&logo=github&color=06B6D4" alt="GitHub Forks" />
+  </a>
+  <a href="https://github.com/tron4x/lumoravision/issues">
+    <img src="https://img.shields.io/github/issues/tron4x/lumoravision?style=for-the-badge&logo=github&color=FF6B6B" alt="GitHub Issues" />
+  </a>
+  <a href="https://github.com/tron4x/lumoravision/commits/main">
+    <img src="https://img.shields.io/github/last-commit/tron4x/lumoravision?style=for-the-badge&logo=github&color=8B5CF6" alt="Last Commit" />
+  </a>
+</p>
+
+---
+
+> [!TIP]
+> **No installation. No account. No server. Just open your browser and drop a folder.**
+
+---
+
+## 🆚 Lumoravision vs. the Alternatives
+
+| Feature | Lumoravision | Plex | VLC | Finder / Explorer |
+|:---|:---:|:---:|:---:|:---:|
+| Zero installation | ✅ | ❌ | ❌ | ✅ |
+| Runs in the browser | ✅ | ✅ | ❌ | ❌ |
+| No account / no cloud | ✅ | ❌ | ✅ | ✅ |
+| GIF export | ✅ | ❌ | ❌ | ❌ |
+| Frame-accurate editor | ✅ | ❌ | ❌ | ❌ |
+| Auto scene detection | ✅ | ❌ | ❌ | ❌ |
+| Storyboard view | ✅ | ❌ | ❌ | ❌ |
+| Splitscreen compare | ✅ | ❌ | ❌ | ❌ |
+| Image slideshow | ✅ | ❌ | ❌ | ⚠️ |
+| Docker support | ✅ | ✅ | ❌ | ❌ |
+| Files stay local | ✅ | ⚠️ | ✅ | ✅ |
+| **Price** | **Free** | **$5/mo** | **Free** | **Free** |
+
 ---
 
 ## 🔥 Why Lumoravision?
@@ -37,6 +76,7 @@ Lumoravision is a **browser-based media player and editor** that runs entirely o
 - 📸 **Storyboard view** — extract up to 100 frames from any video in seconds
 - ⬛⬛ **Splitscreen comparison** — two videos side by side, synced or independent
 - 🎵 **Playlist mode** — queue videos and binge without touching the keyboard
+- 🖼️ **Image Slideshow** — fullscreen slideshow with fade/slide/zoom transitions and auto-play
 
 **Everything runs in your browser. Your files never leave your computer.**
 
@@ -162,10 +202,13 @@ The Editor is a **browser-based non-linear clip sequencer**. No Premiere. No DaV
 
 ---
 
-### 🖼️ Image Viewer
+### 🖼️ Image Viewer & Slideshow
 
 - Supports **JPG, PNG, GIF, WebP, AVIF, BMP, TIFF, SVG, HEIC**
 - Full-screen viewer with left/right navigation
+- **Slideshow mode** — fullscreen auto-play with configurable interval (2 / 3 / 5 / 8 / 10 s) and 3 transitions (Fade · Slide · Zoom)
+- Progress dots (≤20 images) or progress bar (>20 images)
+- Keyboard: `Space` (play/pause) · `←` `→` (navigate) · `F` (fullscreen) · `Esc` (close)
 - Grid and List view
 
 ---
@@ -195,6 +238,15 @@ Press `?` anywhere to open the shortcuts overlay.
 |:---|:---|
 | `Space` | Play / Pause current clip |
 | `Esc` | Close picker or close Editor |
+
+**Slideshow**
+
+| Key | Action |
+|:---|:---|
+| `Space` | Play / Pause |
+| `←` / `→` | Previous / Next image |
+| `F` | Toggle fullscreen |
+| `Esc` | Close slideshow |
 
 **Global**
 
@@ -266,6 +318,7 @@ src/
 │   ├── VideoPlayer.tsx        # Full-screen video player
 │   ├── ImageCard.tsx          # Image grid card
 │   ├── ImageViewer.tsx        # Full-screen image viewer
+│   ├── Slideshow.tsx          # Fullscreen image slideshow
 │   ├── Sidebar.tsx            # Folder navigation
 │   ├── Toolbar.tsx            # Search, sort, view toggle, Editor button
 │   ├── Storyboard.tsx         # Frame overview & export
@@ -273,18 +326,61 @@ src/
 │   ├── DirectorMode.tsx       # Editor: clip sequencer + GIF export
 │   ├── PlaylistItem.tsx       # Playlist panel item
 │   ├── SplashScreen.tsx       # Animated intro
+│   ├── ShortcutsModal.tsx     # Keyboard shortcuts overlay
+│   ├── ErrorBoundary.tsx      # React error boundary
 │   └── InfoModal.tsx          # About dialog
 ├── hooks/
 │   ├── useFileSystem.ts       # Folder reading + persistence
 │   ├── usePersistedFolders.ts # IndexedDB storage
+│   ├── usePlaybackPosition.ts # Resume playback position
 │   └── useSort.ts             # Sorting logic
 ├── utils/
 │   ├── format.ts              # File size, duration, date formatting
 │   ├── gifExport.ts           # GIF export via gif.js
+│   ├── thumbQueue.ts          # Thumbnail generation queue
 │   └── sceneDetection.ts      # Auto chapter / scene detection
 └── types/
     └── video.ts               # TypeScript types
 ```
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues and feature requests are welcome!
+
+1. **Fork** the repository
+2. **Create** your feature branch: `git checkout -b feature/my-feature`
+3. **Commit** your changes: `git commit -m 'feat: add my feature'`
+4. **Push** to the branch: `git push origin feature/my-feature`
+5. **Open** a Pull Request
+
+Please check the [open issues](https://github.com/tron4x/lumoravision/issues) before submitting a new one.
+
+---
+
+## 🌟 Show Your Support
+
+If Lumoravision saves you time or you just like what it does — **leave a star** ⭐  
+It helps others find the project and motivates further development.
+
+<a href="https://github.com/tron4x/lumoravision/stargazers">
+  <img src="https://img.shields.io/github/stars/tron4x/lumoravision?style=social" alt="GitHub Stars" />
+</a>
+
+---
+
+## 🏗️ Built With
+
+<p>
+  <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" /></a>
+  <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-6-3178C6?style=flat-square&logo=typescript&logoColor=white" /></a>
+  <a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" /></a>
+  <a href="https://vitejs.dev"><img src="https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&logo=vite&logoColor=white" /></a>
+  <a href="https://jnordberg.github.io/gif.js/"><img src="https://img.shields.io/badge/gif.js-Web_Worker-FF6B6B?style=flat-square" /></a>
+  <a href="https://developer.mozilla.org/en-US/docs/Web/API/File_System_API"><img src="https://img.shields.io/badge/File_System_Access_API-Browser-8B5CF6?style=flat-square&logo=html5&logoColor=white" /></a>
+  <a href="https://www.docker.com"><img src="https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" /></a>
+</p>
 
 ---
 
@@ -300,3 +396,9 @@ src/
 ## 📄 License
 
 Apache License 2.0 — see [LICENSE](./LICENSE) for details.
+
+---
+
+<p align="center">
+  Made with ❤️ by <a href="https://github.com/tron4x">tron4x</a>
+</p>
