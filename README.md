@@ -294,7 +294,7 @@ docker run -d --name lumoravision -p 8080:80 --restart unless-stopped lumoravisi
 
 | File | Purpose |
 |:---|:---|
-| `Dockerfile` | Multi-stage: Node 22 Alpine (build) → Nginx 1.27 Alpine (serve) |
+| `Dockerfile` | Multi-stage: Node 24 Alpine (build) → Nginx 1.29 Alpine (serve) |
 | `nginx.conf` | SPA routing, gzip, aggressive asset caching, security headers |
 | `docker-compose.yml` | One-command start on port 8080 |
 
