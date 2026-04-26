@@ -76,25 +76,6 @@ The only network requests Lumoravision ever makes are to load the app itself (HT
 
 ---
 
-## 🆚 Lumoravision vs. the Alternatives
-
-| Feature | Lumoravision | Plex | VLC | Finder / Explorer |
-|:---|:---:|:---:|:---:|:---:|
-| Zero installation | ✅ | ❌ | ❌ | ✅ |
-| Runs in the browser | ✅ | ✅ | ❌ | ❌ |
-| No account / no cloud | ✅ | ❌ | ✅ | ✅ |
-| GIF export | ✅ | ❌ | ❌ | ❌ |
-| Frame-accurate editor | ✅ | ❌ | ❌ | ❌ |
-| Auto scene detection | ✅ | ❌ | ❌ | ❌ |
-| Storyboard view | ✅ | ❌ | ❌ | ❌ |
-| Splitscreen compare | ✅ | ❌ | ❌ | ❌ |
-| Image slideshow | ✅ | ❌ | ❌ | ⚠️ |
-| Docker support | ✅ | ✅ | ❌ | ❌ |
-| Files stay local | ✅ | ⚠️ | ✅ | ✅ |
-| **Price** | **Free** | **$5/mo** | **Free** | **Free** |
-
----
-
 ## 🔥 Why Lumoravision?
 
 > **Plex is overkill. VLC is ugly. Finder is a joke.**
