@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.7] - 2026-05-01
+
+### Changed
+- Updated `@eslint/js` from 9.39.4 to 10.0.1
+- Updated `@types/node` from 24.12.2 to 25.6.0
+- Updated `eslint` from 9.39.4 to 10.2.1
+
+---
+
 ## [1.1.6] - 2026-04-26
 
 ### Added
