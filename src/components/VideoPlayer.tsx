@@ -528,50 +528,132 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
               <div className="flex items-center gap-2 mb-3">
                 <svg className="w-3.5 h-3.5 text-purple-400 flex-none" fill="currentColor" viewBox="0 0 24 24"><path d="M11.5 9H13v6h-1.5V9zM9 9H6c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-2H8.5v1.5h-2v-3H10V10c0-.55-.45-1-1-1zm10 1.5V9h-4.5v6H16v-2h2v-1.5h-2v-1h3z"/></svg>
                 <span className="text-xs font-semibold text-slate-300">GIF Export – Select range:</span>
-                <span className="text-xs text-purple-400 font-mono ml-auto">{(gifEndTime - gifStartTime).toFixed(1)}s duration</span>
+                <span className="text-xs text-slate-500">(max 3 min)</span>
+                <span className={`text-xs font-mono ml-auto ${(gifEndTime - gifStartTime) > 180 ? 'text-red-400' : 'text-purple-400'}`}>
+                  {(gifEndTime - gifStartTime).toFixed(1)}s duration
+                  {(gifEndTime - gifStartTime) > 180 && ' ⚠️'}
+                </span>
               </div>
 
-              {/* Range sliders */}
+              {/* Range sliders with frame-by-frame buttons */}
               <div className="grid grid-cols-2 gap-4 mb-3">
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs text-slate-500">Start:</label>
+                    <button
+                      onClick={() => {
+                        const vid = videoRef.current;
+                        if (!vid) return;
+                        const time = vid.currentTime;
+                        setGifStartTime(time);
+                        if (time >= gifEndTime) setGifEndTime(Math.min(duration, time + 1));
+                      }}
+                      className="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                      title="Set start to current position"
+                    >
+                      ⎆ Set
+                    </button>
                     <span className="text-xs text-slate-400 font-mono">{formatDuration(gifStartTime)}</span>
                   </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={duration}
-                    step={0.1}
-                    value={gifStartTime}
-                    onChange={e => {
-                      const v = parseFloat(e.target.value);
-                      setGifStartTime(v);
-                      if (v >= gifEndTime) setGifEndTime(Math.min(duration, v + 1));
-                      if (videoRef.current) videoRef.current.currentTime = v;
-                    }}
-                    className="w-full accent-purple-500 cursor-pointer"
-                  />
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        const frameTime = 1 / 30;
+                        const newTime = Math.max(0, gifStartTime - frameTime);
+                        setGifStartTime(newTime);
+                        if (videoRef.current) videoRef.current.currentTime = newTime;
+                      }}
+                      className="flex-none w-7 h-7 rounded-lg bg-slate-800 hover:bg-purple-600 text-slate-300 text-xs font-bold flex items-center justify-center transition-colors"
+                      title="1 Frame back"
+                    >
+                      ‹
+                    </button>
+                    <input
+                      type="range"
+                      min={0}
+                      max={duration}
+                      step={0.1}
+                      value={gifStartTime}
+                      onChange={e => {
+                        const v = parseFloat(e.target.value);
+                        setGifStartTime(v);
+                        if (v >= gifEndTime) setGifEndTime(Math.min(duration, v + 1));
+                        if (videoRef.current) videoRef.current.currentTime = v;
+                      }}
+                      className="flex-1 accent-purple-500 cursor-pointer"
+                    />
+                    <button
+                      onClick={() => {
+                        const frameTime = 1 / 30;
+                        const newTime = Math.min(gifEndTime - frameTime, gifStartTime + frameTime);
+                        setGifStartTime(newTime);
+                        if (videoRef.current) videoRef.current.currentTime = newTime;
+                      }}
+                      className="flex-none w-7 h-7 rounded-lg bg-slate-800 hover:bg-purple-600 text-slate-300 text-xs font-bold flex items-center justify-center transition-colors"
+                      title="1 Frame forward"
+                    >
+                      ›
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs text-slate-500">End:</label>
+                    <button
+                      onClick={() => {
+                        const vid = videoRef.current;
+                        if (!vid) return;
+                        const time = vid.currentTime;
+                        setGifEndTime(time);
+                        if (time <= gifStartTime) setGifStartTime(Math.max(0, time - 1));
+                      }}
+                      className="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                      title="Set end to current position"
+                    >
+                      ⎆ Set
+                    </button>
                     <span className="text-xs text-slate-400 font-mono">{formatDuration(gifEndTime)}</span>
                   </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={duration}
-                    step={0.1}
-                    value={gifEndTime}
-                    onChange={e => {
-                      const v = parseFloat(e.target.value);
-                      setGifEndTime(v);
-                      if (v <= gifStartTime) setGifStartTime(Math.max(0, v - 1));
-                      if (videoRef.current) videoRef.current.currentTime = v;
-                    }}
-                    className="w-full accent-purple-500 cursor-pointer"
-                  />
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        const frameTime = 1 / 30;
+                        const newTime = Math.max(gifStartTime + frameTime, gifEndTime - frameTime);
+                        setGifEndTime(newTime);
+                        if (videoRef.current) videoRef.current.currentTime = newTime;
+                      }}
+                      className="flex-none w-7 h-7 rounded-lg bg-slate-800 hover:bg-purple-600 text-slate-300 text-xs font-bold flex items-center justify-center transition-colors"
+                      title="1 Frame back"
+                    >
+                      ‹
+                    </button>
+                    <input
+                      type="range"
+                      min={0}
+                      max={duration}
+                      step={0.1}
+                      value={gifEndTime}
+                      onChange={e => {
+                        const v = parseFloat(e.target.value);
+                        setGifEndTime(v);
+                        if (v <= gifStartTime) setGifStartTime(Math.max(0, v - 1));
+                        if (videoRef.current) videoRef.current.currentTime = v;
+                      }}
+                      className="flex-1 accent-purple-500 cursor-pointer"
+                    />
+                    <button
+                      onClick={() => {
+                        const frameTime = 1 / 30;
+                        const newTime = Math.min(duration, gifEndTime + frameTime);
+                        setGifEndTime(newTime);
+                        if (videoRef.current) videoRef.current.currentTime = newTime;
+                      }}
+                      className="flex-none w-7 h-7 rounded-lg bg-slate-800 hover:bg-purple-600 text-slate-300 text-xs font-bold flex items-center justify-center transition-colors"
+                      title="1 Frame forward"
+                    >
+                      ›
+                    </button>
+                  </div>
                 </div>
               </div>
 

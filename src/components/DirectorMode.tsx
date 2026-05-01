@@ -444,7 +444,7 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
   const [showExport, setShowExport] = useState(false);
   const [gifFps, setGifFps] = useState(10);
   const [gifWidth, setGifWidth] = useState(480);
-  const [gifMaxSec] = useState(300); // effectively unlimited – use actual clip duration
+  const [gifMaxSec] = useState(180); // max 3 minutes per clip
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportClipIdx, setExportClipIdx] = useState(0);
@@ -862,7 +862,7 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <div className="text-xs text-slate-600">
-                    ~{clips.length} clip{clips.length !== 1 ? 's' : ''} · {gifFps} fps · {gifWidth}px · full clip duration
+                    ~{clips.length} clip{clips.length !== 1 ? 's' : ''} · {gifFps} fps · {gifWidth}px · <span className="text-emerald-400">(max 3 min per clip)</span>
                   </div>
                   {gifFps >= 24 && (
                     <div className="flex items-center gap-1 text-xs text-amber-400">

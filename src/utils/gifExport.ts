@@ -27,10 +27,19 @@ export async function exportGif(
     onProgress
   } = options;
   
-  const MAX_GIF_DURATION = 30; // seconds – prevent browser hang on very long exports
+  // Max 3 minutes (180 seconds) to prevent browser memory issues
+  const MAX_GIF_DURATION = 180;
   const clampedEnd = Math.min(endTime, startTime + MAX_GIF_DURATION);
   const duration = clampedEnd - startTime;
   const frameCount = Math.ceil(duration * fps);
+  
+  console.log('GIF Export Debug:', {
+    startTime,
+    endTime,
+    duration,
+    frameCount,
+    fps
+  });
   const frameDelay = 1000 / fps;
   
   // Calculate height maintaining aspect ratio

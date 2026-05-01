@@ -3,8 +3,8 @@ import type { VideoFile, SortConfig, SortField } from '../types/video';
 
 export function useSort(videos: VideoFile[]) {
   const [sortConfig, setSortConfig] = useState<SortConfig>({
-    field: 'name',
-    direction: 'asc',
+    field: 'lastModified',
+    direction: 'desc',
   });
 
   const sortedVideos = useMemo(() => {

@@ -16,6 +16,9 @@ import { SplitscreenPlayer } from './components/SplitscreenPlayer';
 import { DirectorMode } from './components/DirectorMode';
 import { Slideshow } from './components/Slideshow';
 import { PlaylistItem } from './components/PlaylistItem';
+import { EasterEgg } from './components/EasterEgg';
+import { CommercialModal } from './components/CommercialModal';
+import { LockScreen } from './components/LockScreen';
 import { formatFileSize } from './utils/format';
 import type { VideoFile, ImageFile, ViewMode } from './types/video';
 
@@ -62,12 +65,45 @@ export default function App() {
   // Shortcuts modal
   const [showShortcuts, setShowShortcuts] = useState(false);
 
-  // Global keyboard shortcut: ? opens shortcuts modal
+  // Easter Egg
+  const [showEasterEgg, setShowEasterEgg] = useState(false);
+  const secretRef = useRef('');
+  const SECRET = 'tron4x';
+
+  // Commercial Modal
+  const [showCommercial, setShowCommercial] = useState(false);
+  const [commercialKey, setCommercialKey] = useState(0);
+
+  // Lock Screen
+  const [isLocked, setIsLocked] = useState(() => {
+    // Check if permanently locked on startup
+    return localStorage.getItem('lumoravision_permanent_lock') === 'true';
+  });
+  const lockCodeRef = useRef('');
+  const LOCK_CODE = 'lockme';
+
+  // Global keyboard shortcut: ? opens shortcuts modal + secret word + lock code
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       // Don't fire when typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === '?') setShowShortcuts(prev => !prev);
+
+      // Secret word detection for Easter Egg
+      if (e.key.length === 1) {
+        secretRef.current = (secretRef.current + e.key.toLowerCase()).slice(-SECRET.length);
+        if (secretRef.current === SECRET) {
+          secretRef.current = '';
+          setShowEasterEgg(true);
+        }
+
+        // Lock code detection
+        lockCodeRef.current = (lockCodeRef.current + e.key.toLowerCase()).slice(-LOCK_CODE.length);
+        if (lockCodeRef.current === LOCK_CODE) {
+          lockCodeRef.current = '';
+          setIsLocked(true);
+        }
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
@@ -271,6 +307,10 @@ export default function App() {
           : undefined}
         onInfo={() => setShowInfo(true)}
         onDirector={filteredVideos.length > 0 ? () => setDirectorOpen(true) : undefined}
+        onCommercial={() => {
+          setCommercialKey(k => k + 1);
+          setShowCommercial(true);
+        }}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -626,6 +666,20 @@ export default function App() {
 
       {/* Keyboard Shortcuts Modal */}
       {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
+
+      {/* Easter Egg – Konami Code */}
+      {showEasterEgg && <EasterEgg onClose={() => setShowEasterEgg(false)} />}
+
+      {/* Commercial Use Modal */}
+      {showCommercial && <CommercialModal key={commercialKey} onClose={() => setShowCommercial(false)} />}
+
+      {/* Lock Screen - blocks everything */}
+      {isLocked && <LockScreen onUnlock={() => {
+        // Clear lock state from localStorage on successful unlock
+        localStorage.removeItem('lumoravision_permanent_lock');
+        localStorage.removeItem('lumoravision_permanent_lock_attempts');
+        setIsLocked(false);
+      }} />}
     </div>
   );
 }
