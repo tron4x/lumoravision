@@ -40,7 +40,7 @@ export default function App() {
 
   const videos = useMemo(() => activeFolder?.videos ?? [], [activeFolder]);
   const images = useMemo(() => activeFolder?.images ?? [], [activeFolder]);
-  const { sortedVideos, sortConfig, toggleSort } = useSort(videos);
+  const { sortedVideos, sortedImages, sortConfig, toggleSort } = useSort(videos, images);
 
   const [activeVideo, setActiveVideo] = useState<VideoFile | null>(null);
   const [activeImage, setActiveImage] = useState<ImageFile | null>(null);
@@ -187,10 +187,10 @@ export default function App() {
   }, [videosWithDuration, searchQuery]);
 
   const filteredImages = useMemo(() => {
-    if (!searchQuery.trim()) return images;
+    if (!searchQuery.trim()) return sortedImages;
     const q = searchQuery.toLowerCase();
-    return images.filter(img => img.name.toLowerCase().includes(q));
-  }, [images, searchQuery]);
+    return sortedImages.filter(img => img.name.toLowerCase().includes(q));
+  }, [sortedImages, searchQuery]);
 
   const handleDurationLoaded = useCallback((id: string, duration: number) => {
     setDurations(prev => {

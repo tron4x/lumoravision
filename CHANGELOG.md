@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `@types/node` from 24.12.2 to 25.6.0
 - Updated `eslint` from 9.39.4 to 10.2.1
 
+### Fixed
+- Images are now sorted along with videos (by name, size, date)
+
 ---
 
 ## [1.1.6] - 2026-04-26
