@@ -33,13 +33,6 @@ export async function exportGif(
   const duration = clampedEnd - startTime;
   const frameCount = Math.ceil(duration * fps);
   
-  console.log('GIF Export Debug:', {
-    startTime,
-    endTime,
-    duration,
-    frameCount,
-    fps
-  });
   const frameDelay = 1000 / fps;
   
   // Calculate height maintaining aspect ratio

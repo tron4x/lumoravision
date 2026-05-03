@@ -17,7 +17,6 @@ import { DirectorMode } from './components/DirectorMode';
 import { Slideshow } from './components/Slideshow';
 import { PlaylistItem } from './components/PlaylistItem';
 import { EasterEgg } from './components/EasterEgg';
-import { CommercialModal } from './components/CommercialModal';
 import { LockScreen } from './components/LockScreen';
 import { formatFileSize } from './utils/format';
 import type { VideoFile, ImageFile, ViewMode } from './types/video';
@@ -69,10 +68,6 @@ export default function App() {
   const [showEasterEgg, setShowEasterEgg] = useState(false);
   const secretRef = useRef('');
   const SECRET = 'tron4x';
-
-  // Commercial Modal
-  const [showCommercial, setShowCommercial] = useState(false);
-  const [commercialKey, setCommercialKey] = useState(0);
 
   // Lock Screen
   const [isLocked, setIsLocked] = useState(() => {
@@ -307,10 +302,6 @@ export default function App() {
           : undefined}
         onInfo={() => setShowInfo(true)}
         onDirector={filteredVideos.length > 0 ? () => setDirectorOpen(true) : undefined}
-        onCommercial={() => {
-          setCommercialKey(k => k + 1);
-          setShowCommercial(true);
-        }}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -669,9 +660,6 @@ export default function App() {
 
       {/* Easter Egg – Konami Code */}
       {showEasterEgg && <EasterEgg onClose={() => setShowEasterEgg(false)} />}
-
-      {/* Commercial Use Modal */}
-      {showCommercial && <CommercialModal key={commercialKey} onClose={() => setShowCommercial(false)} />}
 
       {/* Lock Screen - blocks everything */}
       {isLocked && <LockScreen onUnlock={() => {

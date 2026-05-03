@@ -111,3 +111,15 @@
   will-change: auto;
   z-index: 0;
 }
+
+/* ── Skeleton shimmer animation ── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite linear;
+}

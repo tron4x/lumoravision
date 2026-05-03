@@ -12,7 +12,6 @@ interface ToolbarProps {
   onRescan?: () => void;
   onInfo: () => void;
   onDirector?: () => void;
-  onCommercial: () => void;
 }
 
 function SortButton({
@@ -62,7 +61,6 @@ export function Toolbar({
   onRescan,
   onInfo,
   onDirector,
-  onCommercial,
 }: ToolbarProps) {
   return (
     <header className="flex-none px-5 py-3" style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.08) 0%, rgba(15,23,42,0.95) 40%, rgba(2,6,23,0.98) 100%)', borderBottom: '1px solid rgba(6,182,212,0.15)', boxShadow: '0 1px 30px rgba(6,182,212,0.08), 0 4px 20px rgba(0,0,0,0.4)' }}>
@@ -177,15 +175,6 @@ export function Toolbar({
             </svg>
           </button>
         )}
-
-        {/* Commercial Use button */}
-        <button
-          onClick={onCommercial}
-          className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-green-400 flex items-center justify-center transition-colors flex-none"
-          title="Commercial Use"
-        >
-          <span className="text-base">💰</span>
-        </button>
 
         {/* Info button */}
         <button

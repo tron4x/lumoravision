@@ -92,7 +92,6 @@ function VideoSelectorItem({ video, isSelected, onSelect }: { video: VideoFile; 
       .then(url => { if (!cancelled) { setThumbnail(url); setIsLoading(false); } })
       .catch(() => { if (!cancelled) setIsLoading(false); });
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video.id, video.url]);
 
   return (

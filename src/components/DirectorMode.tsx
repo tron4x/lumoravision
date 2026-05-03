@@ -583,22 +583,23 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
   const activeClip = clips[activeIdx] ?? null;
 
   // ── load clip whenever activeIdx or the clip's url changes ─────────────────
+  const activeClipUrl = activeClip?.video.url ?? null;
   useEffect(() => {
-    const clip = clips[activeIdx];
+    if (!activeClip || !activeClipUrl) return;
     const vid = videoRef.current;
-    if (!clip || !vid) return;
+    if (!vid) return;
 
     const wasPlaying = isPlayingRef.current;
     vid.pause();
-    vid.src = clip.video.url;
+    vid.src = activeClipUrl;
     vid.load();
     setCurrentTime(0);
 
     const onMeta = () => {
       const d = vid.duration;
-      const end = clip.endTime > 0 ? Math.min(clip.endTime, d) : d;
-      setClipDuration(Math.max(0, end - clip.startTime));
-      vid.currentTime = clip.startTime;
+      const end = activeClip.endTime > 0 ? Math.min(activeClip.endTime, d) : d;
+      setClipDuration(Math.max(0, end - activeClip.startTime));
+      vid.currentTime = activeClip.startTime;
       // Always auto-play if we were playing (chain playback)
       if (wasPlaying) {
         vid.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
@@ -610,8 +611,7 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
     } else {
       vid.addEventListener('loadedmetadata', onMeta, { once: true });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIdx, clips[activeIdx]?.video.url]);
+  }, [activeIdx, activeClipUrl, activeClip]);
 
   // ── update clipDuration when trim points change ─────────────────────────────
   useEffect(() => {
@@ -693,7 +693,6 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
       setActiveIdx(next);
     }
   // No deps — reads everything from refs
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── time update — throttled to ~4x/s, reads from refs, never stale ─────────
