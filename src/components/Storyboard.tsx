@@ -26,9 +26,27 @@ export function Storyboard({ video, onClose, onSeekTo }: StoryboardProps) {
   const [showPreview, setShowPreview] = useState(false);
   const [previewPlaying, setPreviewPlaying] = useState(false);
 
+  // Track mount state and the most recent generation run so we can abort old
+  // runs when the user clicks "Regenerate" or unmounts the component – this
+  // prevents leaking `seeked` listeners and updating state after unmount.
+  const mountedRef = useRef(true);
+  const generationIdRef = useRef(0);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      generationIdRef.current++; // invalidate any in-flight generation
+    };
+  }, []);
+
   const generateStoryboard = useCallback(async () => {
     const vid = videoRef.current;
     if (!vid || vid.duration === 0) return;
+
+    // Bump generation id – any older generation loop will see its id mismatch
+    // and bail out instead of calling setState on an unmounted component or
+    // continuing to seek the shared <video>.
+    const myId = ++generationIdRef.current;
 
     setIsGenerating(true);
     setProgress(0);
@@ -40,7 +58,7 @@ export function Storyboard({ video, onClose, onSeekTo }: StoryboardProps) {
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) { setIsGenerating(false); return; }
 
     // Thumbnail size
     const thumbWidth = 192;
@@ -49,26 +67,40 @@ export function Storyboard({ video, onClose, onSeekTo }: StoryboardProps) {
     canvas.height = thumbHeight;
 
     for (let i = 0; i < frameCount; i++) {
+      if (!mountedRef.current || generationIdRef.current !== myId) return;
       const time = i * interval;
       vid.currentTime = time;
 
+      // Wait for seek with a watchdog – avoids leaking listeners on stuck seeks
       await new Promise<void>(resolve => {
-        const onSeeked = () => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
           vid.removeEventListener('seeked', onSeeked);
+          clearTimeout(timeoutId);
           resolve();
         };
+        const onSeeked = () => finish();
+        const timeoutId = setTimeout(finish, 5000);
         vid.addEventListener('seeked', onSeeked);
       });
 
+      if (!mountedRef.current || generationIdRef.current !== myId) return;
+
       ctx.drawImage(vid, 0, 0, thumbWidth, thumbHeight);
       const thumbnail = canvas.toDataURL('image/jpeg', 0.7);
-      
+
       newFrames.push({ time, thumbnail });
-      setProgress(((i + 1) / frameCount) * 100);
+      if (mountedRef.current && generationIdRef.current === myId) {
+        setProgress(((i + 1) / frameCount) * 100);
+      }
     }
 
-    setFrames(newFrames);
-    setIsGenerating(false);
+    if (mountedRef.current && generationIdRef.current === myId) {
+      setFrames(newFrames);
+      setIsGenerating(false);
+    }
   }, [frameCount]);
 
   useEffect(() => {

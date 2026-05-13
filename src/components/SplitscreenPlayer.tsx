@@ -134,6 +134,187 @@ interface SplitscreenPlayerProps {
 }
 
 type LayoutMode = 'side-by-side' | 'top-bottom' | 'pip-left' | 'pip-right';
+type PipCorner = 'tl' | 'tr' | 'bl' | 'br';
+type PipSize = 'sm' | 'md' | 'lg';
+
+const PIP_WIDTHS: Record<PipSize, number> = { sm: 240, md: 320, lg: 420 };
+const PIP_MARGIN = 12;
+
+// Snap a free (x,y) position to the closest viewport corner inside the given container rect
+function snapToCorner(x: number, y: number, w: number, h: number, containerW: number, containerH: number): PipCorner {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const right = cx > containerW / 2;
+  const bottom = cy > containerH / 2;
+  return (bottom ? (right ? 'br' : 'bl') : (right ? 'tr' : 'tl'));
+}
+
+function cornerToXY(corner: PipCorner, w: number, h: number, containerW: number, containerH: number): { x: number; y: number } {
+  const left = corner === 'tl' || corner === 'bl';
+  const top = corner === 'tl' || corner === 'tr';
+  return {
+    x: left ? PIP_MARGIN : Math.max(PIP_MARGIN, containerW - w - PIP_MARGIN),
+    y: top ? PIP_MARGIN : Math.max(PIP_MARGIN, containerH - h - PIP_MARGIN),
+  };
+}
+
+function clampPos(x: number, y: number, w: number, h: number, containerW: number, containerH: number): { x: number; y: number } {
+  return {
+    x: Math.max(PIP_MARGIN, Math.min(x, containerW - w - PIP_MARGIN)),
+    y: Math.max(PIP_MARGIN, Math.min(y, containerH - h - PIP_MARGIN)),
+  };
+}
+
+// ── Reusable video panel sub-components ──────────────────────────────────────
+interface LeftPanelProps {
+  videoLeft: VideoFile;
+  leftRef: React.RefObject<HTMLVideoElement | null>;
+  leftTime: number;
+  leftVolume: number;
+  leftMuted: boolean;
+  showControls: boolean;
+  isLooping: boolean;
+  onTime: (t: number) => void;
+  onDuration: (d: number) => void;
+  onPlay: () => void;
+  onPause: () => void;
+  onTogglePlay: () => void;
+  onMute: (m: boolean) => void;
+  onVolume: (v: number) => void;
+  compact?: boolean;
+}
+
+function LeftVideoPanel({
+  videoLeft, leftRef, leftTime, leftVolume, leftMuted, showControls, isLooping,
+  onTime, onDuration, onPlay, onPause, onTogglePlay, onMute, onVolume, compact,
+}: LeftPanelProps) {
+  return (
+    <>
+      <video
+        ref={leftRef}
+        src={videoLeft.url}
+        loop={isLooping}
+        className="w-full h-full object-contain bg-black"
+        onTimeUpdate={() => {
+          const v = leftRef.current;
+          if (v && Math.abs(v.currentTime - leftTime) > 0.25) onTime(v.currentTime);
+        }}
+        onLoadedMetadata={() => onDuration(leftRef.current?.duration ?? 0)}
+        onPlay={onPlay}
+        onPause={onPause}
+        onClick={onTogglePlay}
+      />
+
+      {/* Label */}
+      <div className={`absolute ${compact ? 'top-1 left-1 px-1.5 py-0.5' : 'top-3 left-3 px-2 py-1'} bg-black/70 backdrop-blur-sm rounded-lg pointer-events-none`}>
+        <span className={`text-cyan-300 font-medium block truncate ${compact ? 'text-[10px] max-w-32' : 'text-xs max-w-48'}`}>
+          {videoLeft.name.replace(/\.[^/.]+$/, '')}
+        </span>
+      </div>
+
+      {/* Volume */}
+      {!compact && (
+        <div className={`absolute bottom-3 left-3 flex items-center gap-2 bg-black/70 backdrop-blur-sm px-2 py-1 rounded-lg transition-opacity ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+          <button onClick={() => onMute(!leftMuted)} className="text-white">
+            {leftMuted ? '🔇' : '🔊'}
+          </button>
+          <input
+            type="range" min="0" max="1" step="0.1"
+            value={leftMuted ? 0 : leftVolume}
+            onChange={e => onVolume(parseFloat(e.target.value))}
+            className="w-16 accent-cyan-500"
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+interface RightPanelProps {
+  videoRight: VideoFile | null;
+  rightRef: React.RefObject<HTMLVideoElement | null>;
+  rightTime: number;
+  rightVolume: number;
+  rightMuted: boolean;
+  showControls: boolean;
+  isLooping: boolean;
+  onTime: (t: number) => void;
+  onDuration: (d: number) => void;
+  onTogglePlay: () => void;
+  onMute: (m: boolean) => void;
+  onVolume: (v: number) => void;
+  onPickVideo: () => void;
+  compact?: boolean;
+}
+
+function RightVideoPanel({
+  videoRight, rightRef, rightTime, rightVolume, rightMuted, showControls, isLooping,
+  onTime, onDuration, onTogglePlay, onMute, onVolume, onPickVideo, compact,
+}: RightPanelProps) {
+  if (!videoRight) {
+    return (
+      <button
+        onClick={onPickVideo}
+        className="w-full h-full flex flex-col items-center justify-center gap-3 text-slate-500 hover:text-slate-300 transition-colors bg-slate-900"
+      >
+        <div className="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center">
+          <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        </div>
+        <span className="text-sm">Select second video</span>
+      </button>
+    );
+  }
+  return (
+    <>
+      <video
+        ref={rightRef}
+        src={videoRight.url}
+        loop={isLooping}
+        className="w-full h-full object-contain bg-black"
+        onTimeUpdate={() => {
+          const v = rightRef.current;
+          if (v && Math.abs(v.currentTime - rightTime) > 0.25) onTime(v.currentTime);
+        }}
+        onLoadedMetadata={() => onDuration(rightRef.current?.duration ?? 0)}
+        onClick={onTogglePlay}
+        muted={rightMuted}
+      />
+
+      {/* Label */}
+      <div className={`absolute ${compact ? 'top-1 left-1 px-1.5 py-0.5' : 'top-3 left-3 px-2 py-1'} bg-black/70 backdrop-blur-sm rounded-lg pointer-events-none`}>
+        <span className={`text-purple-300 font-medium block truncate ${compact ? 'text-[10px] max-w-32' : 'text-xs max-w-48'}`}>
+          {videoRight.name.replace(/\.[^/.]+$/, '')}
+        </span>
+      </div>
+
+      {/* Volume */}
+      {!compact && (
+        <div className={`absolute bottom-3 left-3 flex items-center gap-2 bg-black/70 backdrop-blur-sm px-2 py-1 rounded-lg transition-opacity ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+          <button onClick={() => onMute(!rightMuted)} className="text-white">
+            {rightMuted ? '🔇' : '🔊'}
+          </button>
+          <input
+            type="range" min="0" max="1" step="0.1"
+            value={rightMuted ? 0 : rightVolume}
+            onChange={e => onVolume(parseFloat(e.target.value))}
+            className="w-16 accent-purple-500"
+          />
+        </div>
+      )}
+
+      {/* Change-video button (top-right, always visible) */}
+      {!compact && (
+        <button
+          onClick={onPickVideo}
+          className="absolute top-3 right-3 w-8 h-8 rounded-lg bg-black/70 hover:bg-black/90 flex items-center justify-center transition-colors"
+          title="Change second video"
+        >
+          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        </button>
+      )}
+    </>
+  );
+}
 
 export function SplitscreenPlayer({ 
   videoLeft, 
@@ -166,6 +347,29 @@ export function SplitscreenPlayer({
 
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── PiP draggable state ──────────────────────────────────────────────────
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [pipSize, setPipSize] = useState<PipSize>('md');
+  const [pipCorner, setPipCorner] = useState<PipCorner>('br');
+  // Free position when actively dragging; null = use snapped corner
+  const [pipFreePos, setPipFreePos] = useState<{ x: number; y: number } | null>(null);
+  const [stageRect, setStageRect] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
+
+  // Track stage size – needed for clamping
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const update = () => setStageRect({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // (Free position is clamped on render via `pipPos` derivation below — no
+  // extra effect needed, which avoids cascading renders.)
+
   const resetControlsTimer = useCallback(() => {
     setShowControls(true);
     if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
@@ -179,6 +383,52 @@ export function SplitscreenPlayer({
       if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
     };
   }, []);
+
+  // ── PiP drag handlers (global mousemove/up registered only while dragging) ─
+  const startPipDrag = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const target = e.currentTarget as HTMLElement;
+    const r = target.getBoundingClientRect();
+    const stage = stageRef.current?.getBoundingClientRect();
+    if (!stage) return;
+    dragOffsetRef.current = {
+      dx: e.clientX - r.left,
+      dy: e.clientY - r.top,
+    };
+    // Convert current snapped corner → free position so we have a starting point
+    setPipFreePos({ x: r.left - stage.left, y: r.top - stage.top });
+
+    const w = PIP_WIDTHS[pipSize];
+    const h = Math.round(w * 9 / 16);
+
+    const onMove = (ev: MouseEvent) => {
+      const off = dragOffsetRef.current;
+      const stageNow = stageRef.current?.getBoundingClientRect();
+      if (!off || !stageNow) return;
+      const x = ev.clientX - stageNow.left - off.dx;
+      const y = ev.clientY - stageNow.top - off.dy;
+      const c = clampPos(x, y, w, h, stageNow.width, stageNow.height);
+      setPipFreePos(c);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      // Snap to nearest corner on release
+      const stageNow = stageRef.current?.getBoundingClientRect();
+      if (stageNow && dragOffsetRef.current) {
+        setPipFreePos(prev => {
+          if (!prev) return null;
+          const corner = snapToCorner(prev.x, prev.y, w, h, stageNow.width, stageNow.height);
+          setPipCorner(corner);
+          return null; // back to corner-based positioning
+        });
+      }
+      dragOffsetRef.current = null;
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [pipSize]);
 
   // Sync playback
   const togglePlay = useCallback(() => {
@@ -259,6 +509,31 @@ export function SplitscreenPlayer({
     'pip-right': 'flex-row',
   };
 
+  const isPipMode = layout === 'pip-left' || layout === 'pip-right';
+  // Which video is the small floating one in PiP mode?
+  // pip-left = LEFT is main, RIGHT is small
+  // pip-right = RIGHT is main, LEFT is small
+  const pipIsRight = layout === 'pip-left';
+  const pipIsLeft = layout === 'pip-right';
+
+  // Compute PiP frame style — clamp the free pos derivation so a shrinking
+  // stage never leaves the PiP outside the visible area.
+  const pipW = PIP_WIDTHS[pipSize];
+  const pipH = Math.round(pipW * 9 / 16);
+  const stageW = stageRect.w || 1200;
+  const stageH = stageRect.h || 700;
+  const pipPos = pipFreePos
+    ? clampPos(pipFreePos.x, pipFreePos.y, pipW, pipH, stageW, stageH)
+    : cornerToXY(pipCorner, pipW, pipH, stageW, stageH);
+  const pipStyle: React.CSSProperties = {
+    position: 'absolute',
+    left: pipPos.x,
+    top: pipPos.y,
+    width: pipW,
+    height: pipH,
+    zIndex: 30,
+  };
+
   return (
     <div 
       className="fixed inset-0 z-50 flex flex-col bg-black"
@@ -329,146 +604,186 @@ export function SplitscreenPlayer({
         </button>
       </div>
 
-      {/* Video Area */}
-      <div className={`flex-1 flex ${layoutClasses[layout]} gap-1 p-1 min-h-0`}>
-        {/* Left Video */}
-        <div className={`relative bg-black ${
-          layout === 'pip-left' ? 'flex-1' : 
-          layout === 'pip-right' ? 'absolute bottom-20 left-4 w-72 z-10 rounded-xl overflow-hidden shadow-2xl border border-slate-700' : 
-          'flex-1'
-        }`}>
-          <video
-            ref={leftRef}
-            src={videoLeft.url}
-            loop={isLooping}
-            className="w-full h-full object-contain"
-            onTimeUpdate={() => {
-              const v = leftRef.current;
-              if (v && Math.abs(v.currentTime - leftTime) > 0.25) setLeftTime(v.currentTime);
-            }}
-            onLoadedMetadata={() => setLeftDuration(leftRef.current?.duration ?? 0)}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onClick={togglePlay}
-          />
-          
-          {/* Left label */}
-          <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm px-2 py-1 rounded-lg">
-            <span className="text-white text-xs font-medium truncate max-w-48 block">
-              {videoLeft.name.replace(/\.[^/.]+$/, '')}
-            </span>
-          </div>
-
-          {/* Left volume */}
-          <div className={`absolute bottom-3 left-3 flex items-center gap-2 bg-black/70 backdrop-blur-sm px-2 py-1 rounded-lg transition-opacity ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-            <button onClick={() => {
-              const next = !leftMuted;
-              setLeftMuted(next);
-              if (leftRef.current) leftRef.current.muted = next;
-            }} className="text-white">
-              {leftMuted ? '🔇' : '🔊'}
-            </button>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={leftMuted ? 0 : leftVolume}
-              onChange={e => {
-                const v = parseFloat(e.target.value);
-                setLeftVolume(v);
-                setLeftMuted(v === 0);
-                if (leftRef.current) {
-                  leftRef.current.volume = v;
-                  leftRef.current.muted = v === 0;
-                }
-              }}
-              className="w-16 accent-cyan-500"
-            />
-          </div>
-        </div>
-
-        {/* Right Video or Selector */}
-        <div className={`relative bg-slate-900 ${
-          layout === 'pip-right' ? 'flex-1' : 
-          layout === 'pip-left' ? 'absolute bottom-20 right-4 w-72 z-10 rounded-xl overflow-hidden shadow-2xl border border-slate-700' : 
-          'flex-1'
-        }`}>
-          {videoRight ? (
-            <>
-              <video
-                ref={rightRef}
-                src={videoRight.url}
-                loop={isLooping}
-                className="w-full h-full object-contain"
-                onTimeUpdate={() => {
-                  const v = rightRef.current;
-                  if (v && Math.abs(v.currentTime - rightTime) > 0.25) setRightTime(v.currentTime);
-                }}
-                onLoadedMetadata={() => setRightDuration(rightRef.current?.duration ?? 0)}
-                onClick={togglePlay}
-                muted={rightMuted}
-              />
-              
-              {/* Right label */}
-              <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm px-2 py-1 rounded-lg">
-                <span className="text-white text-xs font-medium truncate max-w-48 block">
-                  {videoRight.name.replace(/\.[^/.]+$/, '')}
-                </span>
-              </div>
-
-              {/* Right volume */}
-              <div className={`absolute bottom-3 left-3 flex items-center gap-2 bg-black/70 backdrop-blur-sm px-2 py-1 rounded-lg transition-opacity ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-                <button onClick={() => {
-                  const next = !rightMuted;
-                  setRightMuted(next);
-                  if (rightRef.current) rightRef.current.muted = next;
-                }} className="text-white">
-                  {rightMuted ? '🔇' : '🔊'}
-                </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={rightMuted ? 0 : rightVolume}
-                  onChange={e => {
-                    const v = parseFloat(e.target.value);
-                    setRightVolume(v);
-                    setRightMuted(v === 0);
-                    if (rightRef.current) {
-                      rightRef.current.volume = v;
-                      rightRef.current.muted = v === 0;
-                    }
-                  }}
-                  className="w-16 accent-cyan-500"
+      {/* Video Area – `stageRef` is the relative anchor for the floating PiP frame */}
+      <div ref={stageRef} className="flex-1 relative bg-black overflow-hidden min-h-0">
+        {isPipMode ? (
+          // ── PiP MODE: ONE main video fills the whole stage; the OTHER is the floating box
+          <>
+            {/* MAIN video (fills stage) */}
+            <div className="absolute inset-0 bg-black">
+              {pipIsLeft ? (
+                <RightVideoPanel
+                  videoRight={videoRight}
+                  rightRef={rightRef}
+                  rightTime={rightTime}
+                  rightVolume={rightVolume}
+                  rightMuted={rightMuted}
+                  showControls={showControls}
+                  isLooping={isLooping}
+                  onTime={t => setRightTime(t)}
+                  onDuration={setRightDuration}
+                  onTogglePlay={togglePlay}
+                  onMute={(m) => { setRightMuted(m); if (rightRef.current) rightRef.current.muted = m; }}
+                  onVolume={(v) => { setRightVolume(v); setRightMuted(v === 0); if (rightRef.current) { rightRef.current.volume = v; rightRef.current.muted = v === 0; } }}
+                  onPickVideo={() => setShowVideoSelector(true)}
                 />
-              </div>
+              ) : (
+                <LeftVideoPanel
+                  videoLeft={videoLeft}
+                  leftRef={leftRef}
+                  leftTime={leftTime}
+                  leftVolume={leftVolume}
+                  leftMuted={leftMuted}
+                  showControls={showControls}
+                  isLooping={isLooping}
+                  onTime={t => setLeftTime(t)}
+                  onDuration={setLeftDuration}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  onTogglePlay={togglePlay}
+                  onMute={(m) => { setLeftMuted(m); if (leftRef.current) leftRef.current.muted = m; }}
+                  onVolume={(v) => { setLeftVolume(v); setLeftMuted(v === 0); if (leftRef.current) { leftRef.current.volume = v; leftRef.current.muted = v === 0; } }}
+                />
+              )}
+            </div>
 
-              {/* Change video button */}
-              <button
-                onClick={() => setShowVideoSelector(true)}
-                className="absolute top-3 right-3 w-8 h-8 rounded-lg bg-black/70 hover:bg-black/90 flex items-center justify-center transition-colors"
-              >
-                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                </svg>
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => setShowVideoSelector(true)}
-              className="w-full h-full flex flex-col items-center justify-center gap-4 text-slate-500 hover:text-slate-300 transition-colors"
+            {/* FLOATING PiP video */}
+            <div
+              style={pipStyle}
+              className="rounded-xl overflow-hidden shadow-2xl border-2 border-cyan-500/60 ring-2 ring-black/50 group bg-black"
             >
-              <div className="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center">
-                <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                </svg>
+              {pipIsRight ? (
+                videoRight ? (
+                  <RightVideoPanel
+                    videoRight={videoRight}
+                    rightRef={rightRef}
+                    rightTime={rightTime}
+                    rightVolume={rightVolume}
+                    rightMuted={rightMuted}
+                    showControls={showControls}
+                    isLooping={isLooping}
+                    onTime={t => setRightTime(t)}
+                    onDuration={setRightDuration}
+                    onTogglePlay={togglePlay}
+                    onMute={(m) => { setRightMuted(m); if (rightRef.current) rightRef.current.muted = m; }}
+                    onVolume={(v) => { setRightVolume(v); setRightMuted(v === 0); if (rightRef.current) { rightRef.current.volume = v; rightRef.current.muted = v === 0; } }}
+                    onPickVideo={() => setShowVideoSelector(true)}
+                    compact
+                  />
+                ) : (
+                  <button
+                    onClick={() => setShowVideoSelector(true)}
+                    className="w-full h-full flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-white bg-slate-900 transition-colors"
+                  >
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                    <span className="text-xs">Select 2nd video</span>
+                  </button>
+                )
+              ) : (
+                <LeftVideoPanel
+                  videoLeft={videoLeft}
+                  leftRef={leftRef}
+                  leftTime={leftTime}
+                  leftVolume={leftVolume}
+                  leftMuted={leftMuted}
+                  showControls={showControls}
+                  isLooping={isLooping}
+                  onTime={t => setLeftTime(t)}
+                  onDuration={setLeftDuration}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  onTogglePlay={togglePlay}
+                  onMute={(m) => { setLeftMuted(m); if (leftRef.current) leftRef.current.muted = m; }}
+                  onVolume={(v) => { setLeftVolume(v); setLeftMuted(v === 0); if (leftRef.current) { leftRef.current.volume = v; leftRef.current.muted = v === 0; } }}
+                  compact
+                />
+              )}
+
+              {/* Drag handle (top bar) */}
+              <div
+                onMouseDown={startPipDrag}
+                onDoubleClick={() => {
+                  // Double-click cycles through corners tl→tr→br→bl
+                  const order: PipCorner[] = ['tl', 'tr', 'br', 'bl'];
+                  const next = order[(order.indexOf(pipCorner) + 1) % order.length];
+                  setPipCorner(next);
+                  setPipFreePos(null);
+                }}
+                className="absolute top-0 left-0 right-0 h-7 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between px-2 cursor-move opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                title="Drag to move · Double-click to snap to next corner"
+              >
+                <div className="flex items-center gap-1 text-white/80">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                  <span className="text-[10px] uppercase tracking-wider font-semibold">Drag</span>
+                </div>
+                {/* Size cycler */}
+                <button
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    const order: PipSize[] = ['sm', 'md', 'lg'];
+                    const next = order[(order.indexOf(pipSize) + 1) % order.length];
+                    setPipSize(next);
+                  }}
+                  className="text-[10px] text-white/80 hover:text-white px-1.5 py-0.5 rounded bg-black/50 uppercase tracking-wider"
+                  title="Cycle PiP size"
+                >
+                  {pipSize}
+                </button>
               </div>
-              <span className="text-sm">Select second video</span>
-            </button>
-          )}
-        </div>
+            </div>
+          </>
+        ) : (
+          // ── SIDE-BY-SIDE / TOP-BOTTOM: regular flex split
+          <div className={`absolute inset-0 flex ${layoutClasses[layout]} gap-1 p-1`}>
+            <div className="relative flex-1 bg-black min-w-0 min-h-0 rounded-lg overflow-hidden">
+              <LeftVideoPanel
+                videoLeft={videoLeft}
+                leftRef={leftRef}
+                leftTime={leftTime}
+                leftVolume={leftVolume}
+                leftMuted={leftMuted}
+                showControls={showControls}
+                isLooping={isLooping}
+                onTime={t => setLeftTime(t)}
+                onDuration={setLeftDuration}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onTogglePlay={togglePlay}
+                onMute={(m) => { setLeftMuted(m); if (leftRef.current) leftRef.current.muted = m; }}
+                onVolume={(v) => { setLeftVolume(v); setLeftMuted(v === 0); if (leftRef.current) { leftRef.current.volume = v; leftRef.current.muted = v === 0; } }}
+              />
+            </div>
+            <div className="relative flex-1 bg-slate-900 min-w-0 min-h-0 rounded-lg overflow-hidden">
+              {videoRight ? (
+                <RightVideoPanel
+                  videoRight={videoRight}
+                  rightRef={rightRef}
+                  rightTime={rightTime}
+                  rightVolume={rightVolume}
+                  rightMuted={rightMuted}
+                  showControls={showControls}
+                  isLooping={isLooping}
+                  onTime={t => setRightTime(t)}
+                  onDuration={setRightDuration}
+                  onTogglePlay={togglePlay}
+                  onMute={(m) => { setRightMuted(m); if (rightRef.current) rightRef.current.muted = m; }}
+                  onVolume={(v) => { setRightVolume(v); setRightMuted(v === 0); if (rightRef.current) { rightRef.current.volume = v; rightRef.current.muted = v === 0; } }}
+                  onPickVideo={() => setShowVideoSelector(true)}
+                />
+              ) : (
+                <button
+                  onClick={() => setShowVideoSelector(true)}
+                  className="w-full h-full flex flex-col items-center justify-center gap-4 text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  <div className="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center">
+                    <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                  </div>
+                  <span className="text-sm">Select second video</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Controls */}

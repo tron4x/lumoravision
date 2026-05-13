@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useFileSystem } from './hooks/useFileSystem';
 import { useSort } from './hooks/useSort';
+import { useCollections } from './hooks/useCollections';
+import type { CollectionColor } from './hooks/useCollections';
 import { VideoCard } from './components/VideoCard';
 import { VideoListRow } from './components/VideoListRow';
 import { VideoPlayer } from './components/VideoPlayer';
@@ -10,7 +12,8 @@ import { SplashScreen } from './components/SplashScreen';
 import { InfoModal } from './components/InfoModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { Toolbar } from './components/Toolbar';
-import { Sidebar } from './components/Sidebar';
+import { Sidebar, NewCollectionDialog } from './components/Sidebar';
+import { CollectionModal } from './components/CollectionModal';
 import { Storyboard } from './components/Storyboard';
 import { SplitscreenPlayer } from './components/SplitscreenPlayer';
 import { DirectorMode } from './components/DirectorMode';
@@ -37,6 +40,43 @@ export default function App() {
     supportsFileSystemAPI,
   } = useFileSystem();
 
+  // ── Collections ────────────────────────────────────────────────────────────
+  const {
+    collections,
+    createCollection,
+    deleteCollection,
+    renameCollection,
+    recolorCollection,
+    toggleInCollection,
+  } = useCollections();
+
+  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
+  const [showNewCollectionDialog, setShowNewCollectionDialog] = useState(false);
+  const [editingCollectionId, setEditingCollectionId] = useState<string | null>(null);
+
+  // All videos/images across ALL loaded folders (for collection management)
+  const allVideos = useMemo(() =>
+    folders.flatMap(f => f.videos),
+    [folders]
+  );
+  const allImages = useMemo(() =>
+    folders.flatMap(f => f.images),
+    [folders]
+  );
+
+  // Active collection object
+  const activeCollection = useMemo(() =>
+    collections.find(c => c.id === activeCollectionId) ?? null,
+    [collections, activeCollectionId]
+  );
+
+  // Editing collection object
+  const editingCollection = useMemo(() =>
+    collections.find(c => c.id === editingCollectionId) ?? null,
+    [collections, editingCollectionId]
+  );
+
+  // ── Folder-based content ───────────────────────────────────────────────────
   const videos = useMemo(() => activeFolder?.videos ?? [], [activeFolder]);
   const images = useMemo(() => activeFolder?.images ?? [], [activeFolder]);
   const { sortedVideos, sortedImages, sortConfig, toggleSort } = useSort(videos, images);
@@ -163,29 +203,67 @@ export default function App() {
     }
   }, [addFolderFallback]);
 
-  const handleSelectFolder = useCallback((id: string) => {
-    setActiveFolderId(id);
+  // ── Collection selection ───────────────────────────────────────────────────
+  const handleSelectCollection = useCallback((id: string) => {
+    setActiveCollectionId(id);
+    setActiveFolderId(null as unknown as string); // deselect folder
     setSearchQuery('');
     setActiveVideo(null);
     setActiveImage(null);
   }, [setActiveFolderId]);
+
+  const handleSelectFolder = useCallback((id: string) => {
+    setActiveFolderId(id);
+    setActiveCollectionId(null);
+    setSearchQuery('');
+    setActiveVideo(null);
+    setActiveImage(null);
+  }, [setActiveFolderId]);
+
+  const handleCreateCollection = useCallback((name: string, color: CollectionColor) => {
+    createCollection(name, color);
+    setShowNewCollectionDialog(false);
+  }, [createCollection]);
 
   const videosWithDuration = useMemo(() =>
     sortedVideos.map(v => ({ ...v, duration: durations[v.id] ?? v.duration })),
     [sortedVideos, durations]
   );
 
+  // ── Filtered content: folder view OR collection view ───────────────────────
+  const collectionMemberSet = useMemo(() =>
+    activeCollection ? new Set(activeCollection.memberIds) : null,
+    [activeCollection]
+  );
+
   const filteredVideos = useMemo(() => {
+    // Collection view: show matching videos from ALL folders
+    if (collectionMemberSet) {
+      const q = searchQuery.toLowerCase();
+      return allVideos
+        .filter(v => collectionMemberSet.has(v.id))
+        .filter(v => !q || v.name.toLowerCase().includes(q))
+        .map(v => ({ ...v, duration: durations[v.id] ?? v.duration }));
+    }
+    // Folder view
     if (!searchQuery.trim()) return videosWithDuration;
     const q = searchQuery.toLowerCase();
     return videosWithDuration.filter(v => v.name.toLowerCase().includes(q));
-  }, [videosWithDuration, searchQuery]);
+  }, [collectionMemberSet, allVideos, videosWithDuration, searchQuery, durations]);
 
   const filteredImages = useMemo(() => {
+    // Collection view
+    if (collectionMemberSet) {
+      const q = searchQuery.toLowerCase();
+      return allImages
+        .filter(img => collectionMemberSet.has(img.id))
+        .filter(img => !q || img.name.toLowerCase().includes(q));
+    }
+    // Folder view
     if (!searchQuery.trim()) return sortedImages;
     const q = searchQuery.toLowerCase();
     return sortedImages.filter(img => img.name.toLowerCase().includes(q));
-  }, [sortedImages, searchQuery]);
+  }, [collectionMemberSet, allImages, sortedImages, searchQuery]);
 
   const handleDurationLoaded = useCallback((id: string, duration: number) => {
     setDurations(prev => {
@@ -247,6 +325,15 @@ export default function App() {
   const hasContent = filteredVideos.length > 0 || filteredImages.length > 0;
   const hasAnyContent = videos.length > 0 || images.length > 0;
 
+  // True when at least one folder needs to be reopened (after page reload in fallback mode)
+  const hasNeedsReopenFolders = folders.some(f => f.needsReopen);
+  // True when collections have members but no files are loaded yet
+  // This covers both: folders present but need reopen, AND no folders loaded at all (fallback mode after reload)
+  const collectionsNeedFolders = collections.some(c => c.memberIds.length > 0)
+    && allVideos.length === 0
+    && allImages.length === 0
+    && (hasNeedsReopenFolders || folders.length === 0);
+
   return (
     <div
       className={`flex flex-col h-screen bg-[#0a0a0f] text-slate-200 overflow-hidden relative ${isDragging ? 'ring-2 ring-inset ring-cyan-500' : ''}`}
@@ -290,12 +377,14 @@ export default function App() {
         sortConfig={sortConfig}
         onSort={toggleSort}
         videoCount={filteredVideos.length}
-        folderName={activeFolder?.name ?? null}
+        folderName={activeCollection ? null : (activeFolder?.name ?? null)}
+        collectionName={activeCollection?.name ?? null}
+        collectionColor={activeCollection?.color ?? null}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        onRescan={activeFolderId
+        onRescan={activeFolderId && !activeCollection
           ? supportsFileSystemAPI
             ? () => rescanFolder(activeFolderId)
             : () => fileInputRef.current?.click()
@@ -313,6 +402,11 @@ export default function App() {
           onAddFolder={handleAddFolder}
           onReopenFolder={handleReopenFolder}
           isLoading={isLoading}
+          collections={collections}
+          activeCollectionId={activeCollectionId}
+          onSelectCollection={handleSelectCollection}
+          onCreateCollection={() => setShowNewCollectionDialog(true)}
+          onOpenCollectionModal={setEditingCollectionId}
         />
 
         <main className="flex-1 overflow-y-auto">
@@ -340,8 +434,8 @@ export default function App() {
             </div>
           )}
 
-          {/* Empty state – no folders */}
-          {!isLoading && !error && folders.length === 0 && (
+          {/* Empty state – no folders (only when no collection is active) */}
+          {!isLoading && !error && folders.length === 0 && !activeCollection && (
             <div className="flex flex-col items-center justify-center h-full gap-6 px-8">
               <div className="relative">
                 <div className="w-24 h-24 rounded-2xl bg-slate-800/60 flex items-center justify-center border border-slate-700/50">
@@ -374,13 +468,85 @@ export default function App() {
             </div>
           )}
 
-          {/* No folder selected */}
-          {!isLoading && !error && folders.length > 0 && !activeFolder && (
+          {/* No folder selected (only when no collection is active either) */}
+          {!isLoading && !error && folders.length > 0 && !activeFolder && !activeCollection && (
             <div className="flex flex-col items-center justify-center h-full gap-3">
               <svg className="w-10 h-10 text-slate-700" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
               </svg>
               <p className="text-slate-500 text-sm">Select a folder from the sidebar</p>
+            </div>
+          )}
+
+          {/* Collection active but empty */}
+          {!isLoading && !error && activeCollection && filteredVideos.length === 0 && filteredImages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full gap-4 px-8">
+
+              {/* Special case: folders need to be reopened after page reload */}
+              {collectionsNeedFolders ? (
+                <>
+                  <div className="w-16 h-16 rounded-2xl bg-amber-900/30 flex items-center justify-center border border-amber-700/40">
+                    <svg className="w-8 h-8 text-amber-400" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                    </svg>
+                  </div>
+                  <div className="text-center max-w-sm">
+                    <p className="text-amber-300 font-semibold mb-1">Folders need to be reopened</p>
+                    <p className="text-slate-500 text-sm leading-relaxed">
+                      After a page reload, your browser requires you to reopen the folders so the files can be accessed again.
+                      Your collection assignments are still saved.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 w-full max-w-xs">
+                    {folders.filter(f => f.needsReopen).length > 0
+                      ? folders.filter(f => f.needsReopen).map(f => (
+                          <button
+                            key={f.id}
+                            onClick={handleReopenFolder}
+                            className="flex items-center gap-3 px-4 py-2.5 bg-amber-600/15 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded-xl text-sm font-medium transition-colors"
+                          >
+                            <svg className="w-4 h-4 flex-none" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+                            </svg>
+                            <span className="truncate">↺ Reopen "{f.name}"</span>
+                          </button>
+                        ))
+                      : (
+                          <button
+                            onClick={handleAddFolder}
+                            className="flex items-center gap-3 px-4 py-2.5 bg-amber-600/15 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded-xl text-sm font-medium transition-colors"
+                          >
+                            <svg className="w-4 h-4 flex-none" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+                            </svg>
+                            <span>Open folder with your files</span>
+                          </button>
+                        )
+                    }
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-16 h-16 rounded-2xl bg-slate-800/60 flex items-center justify-center border border-slate-700/50">
+                    <svg className="w-8 h-8 text-slate-600" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M20 6h-2.18c.07-.44.18-.88.18-1.36C18 2.53 15.47 0 12.36 0c-1.73 0-3.24.87-4.19 2.19L7 3 5.82 2.19C4.87.87 3.36 0 1.64 0H0v2h1.64c.9 0 1.72.45 2.22 1.14L5 4.5 3.86 5.86C3.36 6.55 2.54 7 1.64 7H0v2h1.64c1.73 0 3.24-.87 4.19-2.19L7 5.5l1.17 1.31C9.12 8.13 10.63 9 12.36 9H20c1.1 0 2 .9 2 2v9c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-5H0v5c0 2.21 1.79 4 4 4h16c2.21 0 4-1.79 4-4V11c0-2.21-1.79-4-4-4z"/>
+                    </svg>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-slate-300 font-medium mb-1">Collection is empty</p>
+                    <p className="text-slate-500 text-sm">Open the collection editor to add videos and images.</p>
+                  </div>
+                  <button
+                    onClick={() => setEditingCollectionId(activeCollection.id)}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 border border-purple-500/30 rounded-xl text-sm font-medium transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                    </svg>
+                    Open Collection Editor
+                  </button>
+                </>
+              )}
             </div>
           )}
 
@@ -652,6 +818,31 @@ export default function App() {
           images={filteredImages}
           startIndex={slideshowStartIndex}
           onClose={() => setSlideshowStartIndex(null)}
+        />
+      )}
+
+      {/* Collection Modal – manage members of a collection */}
+      {editingCollection && (
+        <CollectionModal
+          collection={editingCollection}
+          allVideos={allVideos}
+          allImages={allImages}
+          onClose={() => setEditingCollectionId(null)}
+          onRename={renameCollection}
+          onRecolor={recolorCollection}
+          onToggle={toggleInCollection}
+          onDelete={(id) => {
+            deleteCollection(id);
+            if (activeCollectionId === id) setActiveCollectionId(null);
+          }}
+        />
+      )}
+
+      {/* New Collection Dialog */}
+      {showNewCollectionDialog && (
+        <NewCollectionDialog
+          onConfirm={handleCreateCollection}
+          onCancel={() => setShowNewCollectionDialog(false)}
         />
       )}
 

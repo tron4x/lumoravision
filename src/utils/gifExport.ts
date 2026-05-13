@@ -61,22 +61,29 @@ export async function exportGif(
   for (let i = 0; i < frameCount; i++) {
     const time = startTime + (i / fps);
     video.currentTime = time;
-    
-    // Wait for frame to load
+
+    // Wait for frame to load – with a 5s timeout so a stuck seek can't hang
+    // forever and leak the listener.
     await new Promise<void>(resolve => {
-      const onSeeked = () => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
         video.removeEventListener('seeked', onSeeked);
+        clearTimeout(timeoutId);
         resolve();
       };
+      const onSeeked = () => finish();
+      const timeoutId = setTimeout(finish, 5000);
       video.addEventListener('seeked', onSeeked);
     });
-    
+
     // Small delay to ensure frame is rendered
     await new Promise(r => setTimeout(r, 50));
-    
+
     ctx.drawImage(video, 0, 0, width, gifHeight);
     gif.addFrame(ctx, { copy: true, delay: frameDelay });
-    
+
     onProgress?.(((i + 1) / frameCount) * 50); // 0-50% for capturing
   }
   

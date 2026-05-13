@@ -1,10 +1,14 @@
 import type { SortConfig, SortField, ViewMode } from '../types/video';
+import type { CollectionColor } from '../hooks/useCollections';
+import { COLLECTION_COLORS } from '../hooks/useCollections';
 
 interface ToolbarProps {
   sortConfig: SortConfig;
   onSort: (field: SortField) => void;
   videoCount: number;
   folderName: string | null;
+  collectionName?: string | null;
+  collectionColor?: CollectionColor | null;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   viewMode: ViewMode;
@@ -54,6 +58,8 @@ export function Toolbar({
   onSort,
   videoCount,
   folderName,
+  collectionName,
+  collectionColor,
   searchQuery,
   onSearchChange,
   viewMode,
@@ -85,6 +91,18 @@ export function Toolbar({
             <span className="text-slate-600 text-xs flex-none">({videoCount} videos)</span>
           </div>
         )}
+
+        {/* Collection info */}
+        {collectionName && (() => {
+          const colors = COLLECTION_COLORS[collectionColor ?? 'purple'];
+          return (
+            <div className="flex items-center gap-2 min-w-0">
+              <div className={`w-2 h-2 rounded-full flex-none ${colors.dot}`} />
+              <span className={`text-sm font-medium truncate max-w-48 ${colors.text}`}>{collectionName}</span>
+              <span className="text-slate-600 text-xs flex-none">Collection · {videoCount} items</span>
+            </div>
+          );
+        })()}
 
         {/* Search */}
         {videoCount > 0 && (

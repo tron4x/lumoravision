@@ -13,8 +13,16 @@ interface VideoListRowProps {
   onAddToPlaylist: (video: VideoFile) => void;
 }
 
-// Shared thumbnail cache with VideoCard
+// Shared thumbnail cache (capped to avoid unbounded memory growth)
+const THUMB_CACHE_MAX = 500;
 const thumbnailCache = new Map<string, string>();
+function thumbnailCachePut(id: string, dataUrl: string) {
+  if (thumbnailCache.size >= THUMB_CACHE_MAX && !thumbnailCache.has(id)) {
+    const firstKey = thumbnailCache.keys().next().value;
+    if (firstKey !== undefined) thumbnailCache.delete(firstKey);
+  }
+  thumbnailCache.set(id, dataUrl);
+}
 
 function generateThumbnail(url: string): Promise<{ dataUrl: string; duration: number }> {
   return new Promise((resolve, reject) => {
@@ -68,6 +76,16 @@ export function VideoListRow({
   const [isHovering, setIsHovering] = useState(false);
   const generatingRef = useRef(false);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+
+  // Cleanup hover timer on unmount – otherwise it could fire on a vanished row
+  useEffect(() => () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }, []);
 
   // Intersection Observer
   useEffect(() => {
@@ -88,10 +106,10 @@ export function VideoListRow({
     runThumbJob(() =>
       generateThumbnail(video.url)
         .then(({ dataUrl }) => {
-          thumbnailCache.set(video.id, dataUrl);
-          setThumbnail(dataUrl);
+          thumbnailCachePut(video.id, dataUrl);
+          if (mountedRef.current) setThumbnail(dataUrl);
         })
-        .catch(() => setThumbnailError(true))
+        .catch(() => { if (mountedRef.current) setThumbnailError(true); })
         .finally(() => { generatingRef.current = false; })
     );
   }, [inViewport, thumbnail, thumbnailError, video.id, video.url]);

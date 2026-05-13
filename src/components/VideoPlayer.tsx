@@ -5,6 +5,7 @@ import { detectScenes } from '../utils/sceneDetection';
 import type { SceneChapter } from '../utils/sceneDetection';
 import { exportGif, downloadBlob } from '../utils/gifExport';
 import { savePosition, loadPosition } from '../hooks/usePlaybackPosition';
+import { openSession as openScrubSession, releaseSession as releaseScrubSession, getScrubThumb } from '../utils/scrubThumbs';
 interface VideoPlayerProps {
   video: VideoFile;
   onClose: () => void;
@@ -32,6 +33,14 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
   const [showControls, setShowControls] = useState(true);
   const [hoveredChapter, setHoveredChapter] = useState<SceneChapter | null>(null);
   const [hoverX, setHoverX] = useState(0);
+  // Smart-Scrub: live-generated frame preview when hovering the progress bar
+  const [hoverThumb, setHoverThumb] = useState<string | null>(null);
+  const [isHoveringBar, setIsHoveringBar] = useState(false);
+  const [hoverTime, setHoverTime] = useState(0);
+  const [barWidth, setBarWidth] = useState(0);
+  const hoverTimeRef = useRef(0);
+  const hoverRafRef = useRef<number | null>(null);
+  const lastScrubReqIdRef = useRef(0);
   const [isMaximized, setIsMaximized] = useState(false);
   const [showScreenshotPanel, setShowScreenshotPanel] = useState(false);
   
@@ -46,6 +55,7 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
 
   // Scene detection state – reset automatically when video.url changes via key prop in App.tsx
   const [chapters, setChapters] = useState<SceneChapter[]>([]);
+  const [showChapters, setShowChapters] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
   const [analyzed, setAnalyzed] = useState(false);
@@ -119,6 +129,18 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
     return () => { if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current); };
   }, []);
 
+  // ── Smart-Scrub session lifecycle ────────────────────────────────────────
+  // Open a hidden scrub session for the current video so we can fetch hover
+  // thumbnails on demand. Closed when the player unmounts or the video URL
+  // changes (e.g. switching playlist entry).
+  useEffect(() => {
+    openScrubSession(video.id, video.url);
+    return () => {
+      releaseScrubSession();
+      if (hoverRafRef.current !== null) cancelAnimationFrame(hoverRafRef.current);
+    };
+  }, [video.id, video.url]);
+
   // Scene detection
   const runSceneDetection = useCallback(async () => {
     const vid = videoRef.current;
@@ -184,14 +206,47 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
     if (!bar || !duration) return;
     const rect = bar.getBoundingClientRect();
     const ratio = (e.clientX - rect.left) / rect.width;
-    const hoverTime = ratio * duration;
+    const t = ratio * duration;
+    hoverTimeRef.current = t;
+    setHoverTime(t);
     setHoverX(e.clientX - rect.left);
+    setBarWidth(rect.width);
+    setIsHoveringBar(true);
     const nearest = chapters.reduce<SceneChapter | null>((best, ch) => {
       const dist = Math.abs(ch.time - hoverTime);
       if (dist < 3) return best === null || dist < Math.abs(best.time - hoverTime) ? ch : best;
       return best;
     }, null);
     setHoveredChapter(nearest);
+
+    // Smart-Scrub: schedule a single frame fetch per animation frame. The
+    // scrubThumbs module itself coalesces concurrent seeks, so we only need
+    // to deduplicate at the rAF level. We tag each request with a
+    // monotonically-increasing id so an out-of-order resolution can't
+    // overwrite a newer thumbnail.
+    if (hoverRafRef.current !== null) return;
+    hoverRafRef.current = requestAnimationFrame(() => {
+      hoverRafRef.current = null;
+      const t = hoverTimeRef.current;
+      const reqId = ++lastScrubReqIdRef.current;
+      getScrubThumb(video.id, t).then(url => {
+        // Only apply if this is still the most recent request and the user
+        // is still hovering the bar (otherwise we'd flash a stale image).
+        if (reqId === lastScrubReqIdRef.current && url) {
+          setHoverThumb(url);
+        }
+      });
+    });
+  }
+
+  function handleProgressLeave() {
+    setHoveredChapter(null);
+    setIsHoveringBar(false);
+    setHoverThumb(null);
+    if (hoverRafRef.current !== null) {
+      cancelAnimationFrame(hoverRafRef.current);
+      hoverRafRef.current = null;
+    }
   }
 
   function handleVolumeChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -302,6 +357,22 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
             )}
             {isAnalyzing && <span className="text-xs text-cyan-400 flex-none">{analyzeProgress}%</span>}
 
+            {/* Show / Hide chapter strip + markers */}
+            {chapters.length > 1 && (
+              <button
+                onClick={() => setShowChapters(p => !p)}
+                className={`flex items-center gap-1 px-2 py-1 text-xs rounded-lg border transition-colors ${showChapters ? 'bg-cyan-600/30 text-cyan-300 border-cyan-500/40' : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'}`}
+                title={showChapters ? 'Hide chapter strip' : 'Show chapter strip'}
+              >
+                {showChapters ? (
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                ) : (
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78 3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                )}
+                {showChapters ? 'Hide' : 'Show'}
+              </button>
+            )}
+
           </div>
 
           <div className="flex items-center gap-1 flex-none">
@@ -347,7 +418,7 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
         </div>
 
         {/* Chapter strip – fixed height, scrollable, does not push video */}
-        {chapters.length > 1 && (
+        {chapters.length > 1 && showChapters && (
           <div className="flex-none bg-slate-900/60 border-t border-slate-800/40 px-4 py-2" style={{ height: '88px', overflowX: 'auto', overflowY: 'hidden' }}>
             <div className="flex gap-2 h-full items-center">
               {chapters.map((ch, i) => (
@@ -368,19 +439,38 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
         <div className="flex-none bg-slate-900/90 px-4 py-3 border-t border-slate-800/60">
           {/* Progress bar */}
           <div ref={progressRef} className="relative w-full h-1.5 bg-slate-700 rounded-full cursor-pointer mb-3 group/progress hover:h-2.5 transition-all"
-            onClick={handleProgressClick} onMouseMove={handleProgressHover} onMouseLeave={() => setHoveredChapter(null)}>
+            onClick={handleProgressClick} onMouseMove={handleProgressHover} onMouseLeave={handleProgressLeave}>
             <div className="h-full bg-cyan-500 rounded-full relative" style={{ width: `${progress}%` }}>
               <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover/progress:opacity-100 shadow-lg" />
             </div>
 
-            {/* Chapter markers */}
-            {chapters.map((ch, i) => i > 0 && duration > 0 && (
+            {/* Chapter markers (also hidden when chapters are toggled off) */}
+            {showChapters && chapters.map((ch, i) => i > 0 && duration > 0 && (
               <div key={ch.time} className="absolute top-1/2 -translate-y-1/2 w-0.5 h-3 bg-white/60 rounded-full" style={{ left: `${(ch.time / duration) * 100}%` }} />
             ))}
 
-            {hoveredChapter && (
-              <div className="absolute bottom-5 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white pointer-events-none shadow-xl z-10 whitespace-nowrap" style={{ left: Math.max(0, hoverX - 30) }}>
-                {hoveredChapter.label} · {formatDuration(hoveredChapter.time)}
+            {/* Smart-Scrub hover preview – thumbnail + timecode + optional chapter */}
+            {isHoveringBar && duration > 0 && (
+              <div
+                className="absolute bottom-4 flex flex-col items-center pointer-events-none z-10"
+                style={{ left: Math.max(0, Math.min(Math.max(0, barWidth - 96), hoverX - 48)) }}
+              >
+                {hoverThumb ? (
+                  <img
+                    src={hoverThumb}
+                    alt=""
+                    draggable={false}
+                    className="w-24 h-[54px] object-cover rounded-md border border-slate-700 shadow-xl bg-slate-900"
+                  />
+                ) : (
+                  <div className="w-24 h-[54px] rounded-md border border-slate-700 bg-slate-900 shadow-xl flex items-center justify-center">
+                    <div className="w-3 h-3 border border-slate-600 border-t-cyan-400 rounded-full animate-spin" />
+                  </div>
+                )}
+                <div className="mt-1 bg-slate-800/95 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-white font-mono whitespace-nowrap shadow-lg">
+                  {hoveredChapter ? `${hoveredChapter.label} · ` : ''}
+                  {formatDuration(hoverTime)}
+                </div>
               </div>
             )}
           </div>

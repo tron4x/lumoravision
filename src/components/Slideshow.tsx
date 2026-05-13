@@ -25,6 +25,7 @@ export function Slideshow({ images, startIndex = 0, onClose }: SlideshowProps) {
 
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const current = images[index];
   const total = images.length;
 
@@ -41,6 +42,7 @@ export function Slideshow({ images, startIndex = 0, onClose }: SlideshowProps) {
     return () => {
       if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
       if (playTimerRef.current) clearTimeout(playTimerRef.current);
+      if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current);
     };
   }, []);
 
@@ -49,9 +51,11 @@ export function Slideshow({ images, startIndex = 0, onClose }: SlideshowProps) {
     if (animating) return;
     setDirection(dir);
     setAnimating(true);
-    setTimeout(() => {
+    if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current);
+    transitionTimerRef.current = setTimeout(() => {
       setIndex(nextIndex);
       setAnimating(false);
+      transitionTimerRef.current = null;
     }, 350);
   }, [animating]);
 

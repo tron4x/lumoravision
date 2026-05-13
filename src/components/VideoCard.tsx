@@ -65,19 +65,26 @@ function generateThumbnail(url: string): Promise<{ dataUrl: string; duration: nu
       }
     };
 
-    video.onerror = () => { clearTimeout(timeout); cleanup(); reject(new Error('Video load error')); };
-
     // Timeout fallback – cleared on seeked OR error
     const timeout = setTimeout(() => { cleanup(); reject(new Error('Timeout')); }, 15000);
-    video.addEventListener('seeked', () => clearTimeout(timeout), { once: true });
+    video.onerror = () => { clearTimeout(timeout); cleanup(); reject(new Error('Video load error')); };
 
     video.src = url;
     video.load();
   });
 }
 
-// Simple in-memory thumbnail cache (survives re-renders, cleared on page reload)
+// Simple in-memory thumbnail cache (survives re-renders, cleared on page reload).
+// Capped to avoid unbounded growth when scrolling through huge folders.
+const THUMB_CACHE_MAX = 500;
 const thumbnailCache = new Map<string, string>();
+function thumbnailCachePut(id: string, dataUrl: string) {
+  if (thumbnailCache.size >= THUMB_CACHE_MAX && !thumbnailCache.has(id)) {
+    const firstKey = thumbnailCache.keys().next().value;
+    if (firstKey !== undefined) thumbnailCache.delete(firstKey);
+  }
+  thumbnailCache.set(id, dataUrl);
+}
 
 export function VideoCard({ video, onPlay, onDurationLoaded, onAddToPlaylist, inPlaylist, onStoryboard, onSplitscreen }: VideoCardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -88,6 +95,8 @@ export function VideoCard({ video, onPlay, onDurationLoaded, onAddToPlaylist, in
   const [thumbnailError, setThumbnailError] = useState(false);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generatingRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
   // Intersection Observer: generate thumbnail when card enters viewport
   useEffect(() => {
@@ -109,14 +118,16 @@ export function VideoCard({ video, onPlay, onDurationLoaded, onAddToPlaylist, in
     runThumbJob(() =>
       generateThumbnail(video.url)
         .then(({ dataUrl, duration }) => {
-          thumbnailCache.set(video.id, dataUrl);
-          setThumbnail(dataUrl);
-          if (duration && isFinite(duration)) {
-            onDurationLoaded(video.id, duration);
+          thumbnailCachePut(video.id, dataUrl);
+          if (mountedRef.current) {
+            setThumbnail(dataUrl);
+            if (duration && isFinite(duration)) {
+              onDurationLoaded(video.id, duration);
+            }
           }
         })
         .catch(() => {
-          setThumbnailError(true);
+          if (mountedRef.current) setThumbnailError(true);
         })
         .finally(() => {
           generatingRef.current = false;
@@ -145,6 +156,15 @@ export function VideoCard({ video, onPlay, onDurationLoaded, onAddToPlaylist, in
     if (!vid) return;
     vid.pause();
     vid.currentTime = 0;
+  }, []);
+
+  // Make sure any pending hover timer is cleared on unmount – otherwise it
+  // would call setIsHovering(true) on an unmounted component.
+  useEffect(() => () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
   }, []);
 
   const extColor = extColors[video.extension] ?? 'bg-slate-600';

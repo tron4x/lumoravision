@@ -202,14 +202,18 @@ export function useFileSystem(): UseFileSystemReturn {
     setIsLoading(true);
     setError(null);
 
-    const folderId = generateFolderId();
-    const folderUrls: string[] = [];
-    const foundVideos: VideoFile[] = [];
-    const foundImages: ImageFile[] = [];
-
     const firstFile = files[0];
     const pathParts = (firstFile.webkitRelativePath || firstFile.name).split('/');
     const folderName = pathParts.length > 1 ? pathParts[0] : 'Selected Files';
+
+    // Reuse the existing folder ID if a folder with the same name already exists
+    // (even if it was marked needsReopen). This keeps collection member IDs stable.
+    const existingFolder = folders.find(f => f.name === folderName);
+    const folderId = existingFolder ? existingFolder.id : generateFolderId();
+
+    const folderUrls: string[] = [];
+    const foundVideos: VideoFile[] = [];
+    const foundImages: ImageFile[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -266,7 +270,7 @@ export function useFileSystem(): UseFileSystemReturn {
     } else {
       setError(null);
     }
-  }, []);
+  }, [folders]);
 
   // Rescan an existing folder by id – re-reads files from the stored handle
   const rescanFolder = useCallback(async (id: string) => {
@@ -305,14 +309,36 @@ export function useFileSystem(): UseFileSystemReturn {
         showDirectoryPicker: (options?: { mode?: string }) => Promise<FileSystemDirectoryHandle>;
       }).showDirectoryPicker({ mode: 'read' });
 
-      const folderId = generateFolderId();
+      // Look up the stable ID from IndexedDB first (most reliable source).
+      // This ensures collection member IDs remain valid after reload + reopen.
+      const savedHandles = await loadFolderHandles();
+      const savedEntry = savedHandles.find(s => s.name === dirHandle.name);
+
+      // Also check current state as fallback
+      const folderId = savedEntry?.id
+        ?? folders.find(f => f.name === dirHandle.name)?.id
+        ?? generateFolderId();
+
+      // Revoke old URLs if we're replacing an existing folder
+      const oldUrls = urlsRef.current.get(folderId) ?? [];
+      oldUrls.forEach(url => URL.revokeObjectURL(url));
+
       const { videos, images } = await readFilesFromHandle(dirHandle, folderId, urlsRef.current);
 
+      // Save updated handle (same ID, new handle object)
       await saveFolderHandle(folderId, dirHandle.name, dirHandle);
 
       const newFolder: VideoFolder = { id: folderId, name: dirHandle.name, videos, images };
 
-      setFolders(prev => [...prev, newFolder]);
+      setFolders(prev => {
+        const idx = prev.findIndex(f => f.id === folderId || f.name === dirHandle.name);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = newFolder;
+          return next;
+        }
+        return [...prev, newFolder];
+      });
       setActiveFolderId(folderId);
 
       if (videos.length === 0 && images.length === 0) {
@@ -327,7 +353,7 @@ export function useFileSystem(): UseFileSystemReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [supportsFileSystemAPI]);
+  }, [supportsFileSystemAPI, folders]);
 
   return {
     folders,

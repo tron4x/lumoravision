@@ -5,6 +5,7 @@ import { detectScenes } from '../utils/sceneDetection';
 import type { SceneChapter } from '../utils/sceneDetection';
 import GIF from 'gif.js';
 import { downloadBlob } from '../utils/gifExport';
+import { exportClipsToWebM } from '../utils/webmExport';
 import { runThumbJob } from '../utils/thumbQueue';
 
 type TransitionType = 'cut' | 'fade' | 'dissolve' | 'zoom' | 'slide-left' | 'slide-right' | 'flash';
@@ -22,35 +23,52 @@ interface DirectorModeProps {
   onClose: () => void;
 }
 
-// ── thumbnail cache ───────────────────────────────────────────────────────────
+// ── thumbnail cache (capped to avoid unbounded memory growth) ────────────────
+const THUMB_CACHE_MAX = 200;
 const thumbCache = new Map<string, string>();
+function thumbCachePut(id: string, dataUrl: string) {
+  if (thumbCache.size >= THUMB_CACHE_MAX && !thumbCache.has(id)) {
+    const firstKey = thumbCache.keys().next().value;
+    if (firstKey !== undefined) thumbCache.delete(firstKey);
+  }
+  thumbCache.set(id, dataUrl);
+}
 
 function getThumb(video: VideoFile, cb: (url: string) => void) {
   if (thumbCache.has(video.id)) { cb(thumbCache.get(video.id)!); return; }
   runThumbJob(() => new Promise<void>(resolve => {
     const v = document.createElement('video');
     v.muted = true; v.preload = 'auto'; v.playsInline = true;
+    let done = false;
+    const finishOnce = () => { if (done) return; done = true; clearTimeout(timeoutId); v.src = ''; v.load(); resolve(); };
     const capture = () => {
       v.removeEventListener('seeked', capture);
+      if (done) return;
       const c = document.createElement('canvas'); c.width = 160; c.height = 90;
-      const ctx = c.getContext('2d'); if (!ctx) { v.src = ''; v.load(); resolve(); return; }
+      const ctx = c.getContext('2d'); if (!ctx) { finishOnce(); return; }
       ctx.drawImage(v, 0, 0, 160, 90);
       const url = c.toDataURL('image/jpeg', 0.75);
-      thumbCache.set(video.id, url);
+      thumbCachePut(video.id, url);
       cb(url);
-      v.src = ''; v.load();
-      resolve();
+      finishOnce();
     };
+    // Watchdog – if the browser never fires seeked/loadeddata (corrupt or
+    // unsupported codec), free resources after 10s instead of leaking.
+    const timeoutId = setTimeout(finishOnce, 10000);
     v.onloadeddata = () => { if (isFinite(v.duration) && v.duration > 0) v.currentTime = v.duration * 0.1; else capture(); };
     v.addEventListener('seeked', capture, { once: true });
-    v.onerror = () => { v.src = ''; v.load(); resolve(); };
+    v.onerror = () => { finishOnce(); };
     v.src = video.url; v.load();
   }));
 }
 
 function useThumb(video: VideoFile) {
   const [thumb, setThumb] = useState<string | null>(thumbCache.get(video.id) ?? null);
-  useEffect(() => { if (!thumb) getThumb(video, setThumb); }, [video, thumb]);
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  useEffect(() => {
+    if (!thumb) getThumb(video, (url) => { if (mountedRef.current) setThumb(url); });
+  }, [video, thumb]);
   return thumb;
 }
 
@@ -81,204 +99,323 @@ function PickerRow({ video, onAdd }: { video: VideoFile; onAdd: () => void }) {
 // ── Clip duration display ─────────────────────────────────────────────────────
 function ClipDur({ clip }: { clip: Clip }) {
   const [dur, setDur] = useState(clip.video.duration ?? 0);
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   useEffect(() => {
     if (dur > 0) return;
     const v = document.createElement('video'); v.preload = 'metadata'; v.muted = true;
-    v.onloadedmetadata = () => { setDur(v.duration); v.src = ''; v.load(); };
+    v.onloadedmetadata = () => {
+      if (mountedRef.current) setDur(v.duration);
+      v.src = ''; v.load();
+    };
     v.src = clip.video.url; v.load();
+    return () => { v.onloadedmetadata = null; v.src = ''; v.load(); };
   }, [clip.video.url, dur]);
   const end = clip.endTime > 0 ? clip.endTime : dur;
   return <span className="text-slate-500 text-xs font-mono">{formatDuration(Math.max(0, end - clip.startTime))}</span>;
 }
 
 // ── Frame Scrubber ────────────────────────────────────────────────────────────
+// New design (replaces the old mini-canvas preview):
+//   • Filmstrip of 16 evenly-spaced thumbnails along the full width
+//   • Two draggable IN/OUT markers directly on the strip
+//   • Highlighted region between markers
+//   • Scrubbing seeks the *main preview video* (videoRef) so the user sees
+//     the current frame in the big preview area instead of a tiny canvas
+//   • Frame-step buttons + Set IN/OUT below for precision
 const FRAME_STEP = 1 / 30;
+const STRIP_THUMBS = 16;
 
-function FrameScrubber({ clip, dur, onSetIn, onSetOut }: {
-  clip: Clip; dur: number;
+function FrameScrubber({ clip, dur, onSetIn, onSetOut, videoRef }: {
+  clip: Clip;
+  dur: number;
   onSetIn: (t: number) => void;
   onSetOut: (t: number) => void;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const scrubVideoRef = useRef<HTMLVideoElement | null>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const thumbVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [thumbs, setThumbs] = useState<string[]>([]);
   const [scrubTime, setScrubTime] = useState(clip.startTime);
-  const [seeking, setSeeking] = useState(false);
-  const seekingRef = useRef(false);
-  // Track which clip.id we last drew so we can re-draw on clip change
-  const lastClipIdRef = useRef<string>('');
+  const [dragging, setDragging] = useState<'in' | 'out' | 'scrub' | null>(null);
+  const dragRef = useRef<'in' | 'out' | 'scrub' | null>(null);
 
-  // Create hidden video element once per clip URL
+  // Seek pump for the main preview video — coalesces rapid scrubs.
+  // Implemented as an inner self-recursive function so the closure can call
+  // itself when draining the pending queue (no useCallback self-ref hazard).
+  const seekingRef = useRef(false);
+  const pendingSeekRef = useRef<number | null>(null);
+  const seekMain = useCallback((t: number) => {
+    const main = videoRef.current;
+    if (!main) return;
+    if (!main.paused) main.pause();
+    const run = (target: number) => {
+      const m = videoRef.current;
+      if (!m) return;
+      if (seekingRef.current) {
+        pendingSeekRef.current = target;
+        return;
+      }
+      seekingRef.current = true;
+      const onSeeked = () => {
+        m.removeEventListener('seeked', onSeeked);
+        const next = pendingSeekRef.current;
+        pendingSeekRef.current = null;
+        seekingRef.current = false;
+        if (next !== null) run(next);
+      };
+      m.addEventListener('seeked', onSeeked);
+      try { m.currentTime = Math.max(0, Math.min(dur, target)); } catch { seekingRef.current = false; }
+    };
+    run(t);
+  }, [videoRef, dur]);
+
+  // ── Build filmstrip thumbnails (lazy, off-screen video) ──────────────────
   useEffect(() => {
+    let cancelled = false;
+    // Reset thumbs immediately on clip change so the old strip doesn't show
+    // briefly while the new one is being built. This is intentional and
+    // bounded (one render per clip change), so the lint rule about cascading
+    // renders does not apply here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setThumbs([]);
     const v = document.createElement('video');
     v.muted = true; v.playsInline = true; v.preload = 'auto';
     v.src = clip.video.url; v.load();
-    scrubVideoRef.current = v;
-    return () => { v.src = ''; v.load(); scrubVideoRef.current = null; };
-  }, [clip.video.url]);
+    thumbVideoRef.current = v;
 
-  // Pending seek target — if a new seek comes in while one is in flight, we
-  // store the latest target and re-seek once the current one completes.
-  const pendingSeekRef = useRef<number | null>(null);
-
-  // Draw a frame onto the canvas — uses video's native resolution, falls back to 960×540
-  const drawFrame = useCallback((v: HTMLVideoElement, canvas: HTMLCanvasElement) => {
-    const w = v.videoWidth || 960;
-    const h = v.videoHeight || 540;
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    if (ctx) ctx.drawImage(v, 0, 0, w, h);
-  }, []);
-
-  // Seek and draw frame on canvas
-  const seekAndDraw = useCallback((t: number) => {
-    const v = scrubVideoRef.current;
-    const canvas = canvasRef.current;
-    if (!v || !canvas) return;
-
-    if (seekingRef.current) {
-      // Already seeking — queue the latest target, will be picked up on seeked
-      pendingSeekRef.current = t;
-      return;
-    }
-
-    seekingRef.current = true;
-    setSeeking(true);
-
-    const onSeeked = () => {
-      v.removeEventListener('seeked', onSeeked);
-      drawFrame(v, canvas);
-
-      // If another seek was requested while we were busy, do it now
-      const next = pendingSeekRef.current;
-      if (next !== null) {
-        pendingSeekRef.current = null;
-        const onSeeked2 = () => {
-          v.removeEventListener('seeked', onSeeked2);
-          drawFrame(v, canvas);
-          seekingRef.current = false;
-          setSeeking(false);
-        };
-        v.addEventListener('seeked', onSeeked2);
-        v.currentTime = next;
-      } else {
-        seekingRef.current = false;
-        setSeeking(false);
-      }
+    const dispose = () => {
+      try { v.pause(); v.removeAttribute('src'); v.load(); } catch { /* ignore */ }
+      thumbVideoRef.current = null;
     };
 
-    v.addEventListener('seeked', onSeeked);
-    v.currentTime = t;
-  }, [drawFrame]);
+    const generate = async () => {
+      // Wait for metadata
+      if (v.readyState < 1) {
+        await new Promise<void>(r => {
+          const onMeta = () => { v.removeEventListener('loadedmetadata', onMeta); r(); };
+          v.addEventListener('loadedmetadata', onMeta);
+        });
+      }
+      if (cancelled) return;
 
-  // Draw initial frame when component mounts or clip changes
+      const c = document.createElement('canvas');
+      c.width = 96; c.height = 54;
+      const ctx = c.getContext('2d');
+      if (!ctx) { dispose(); return; }
+
+      const result: string[] = new Array(STRIP_THUMBS).fill('');
+      for (let i = 0; i < STRIP_THUMBS; i++) {
+        if (cancelled) { dispose(); return; }
+        const t = (i / (STRIP_THUMBS - 1)) * Math.max(0.1, dur - 0.1);
+        await new Promise<void>(resolve => {
+          let done = false;
+          const finish = () => { if (done) return; done = true; v.removeEventListener('seeked', onSeeked); clearTimeout(timer); resolve(); };
+          const onSeeked = () => finish();
+          const timer = setTimeout(finish, 3000);
+          v.addEventListener('seeked', onSeeked);
+          try { v.currentTime = t; } catch { finish(); }
+        });
+        if (cancelled) { dispose(); return; }
+        try {
+          ctx.drawImage(v, 0, 0, c.width, c.height);
+          result[i] = c.toDataURL('image/jpeg', 0.65);
+          // incremental update so the user sees progress
+          if (!cancelled) setThumbs([...result]);
+        } catch { /* skip this frame */ }
+      }
+      dispose();
+    };
+
+    generate();
+
+    return () => {
+      cancelled = true;
+      dispose();
+    };
+  }, [clip.video.url, dur]);
+
+  // ── Initial scrub position when clip changes ─────────────────────────────
+  const lastClipIdRef = useRef<string>('');
   useEffect(() => {
     if (lastClipIdRef.current === clip.id) return;
     lastClipIdRef.current = clip.id;
     setScrubTime(clip.startTime);
+    seekMain(clip.startTime);
+  }, [clip.id, clip.startTime, seekMain]);
 
-    // Wait for video to be ready, then seek + draw
-    const v = scrubVideoRef.current;
-    if (!v) return;
+  const inT = clip.startTime;
+  const outT = clip.endTime > 0 ? clip.endTime : dur;
+  const pct = (t: number) => `${(t / Math.max(0.001, dur)) * 100}%`;
 
-    const doSeek = () => seekAndDraw(clip.startTime);
+  // ── Strip interaction ────────────────────────────────────────────────────
+  const timeFromClientX = useCallback((clientX: number): number => {
+    const el = stripRef.current;
+    if (!el) return 0;
+    const rect = el.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return ratio * dur;
+  }, [dur]);
 
-    if (v.readyState >= 1) {
-      // Metadata already loaded — defer one frame so canvas is in DOM
-      const id = requestAnimationFrame(doSeek);
-      return () => cancelAnimationFrame(id);
-    } else {
-      v.addEventListener('loadedmetadata', doSeek, { once: true });
-      return () => v.removeEventListener('loadedmetadata', doSeek);
-    }
-  }, [clip.id, clip.startTime, seekAndDraw]);
+  // Global mousemove/up while dragging
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (ev: MouseEvent) => {
+      const t = timeFromClientX(ev.clientX);
+      const which = dragRef.current;
+      if (which === 'in') {
+        // Clamp IN to [0, OUT - 1 frame]
+        const clamped = Math.max(0, Math.min(t, outT - FRAME_STEP));
+        onSetIn(clamped);
+        setScrubTime(clamped);
+        seekMain(clamped);
+      } else if (which === 'out') {
+        const clamped = Math.max(inT + FRAME_STEP, Math.min(t, dur));
+        onSetOut(clamped);
+        setScrubTime(clamped);
+        seekMain(clamped);
+      } else if (which === 'scrub') {
+        setScrubTime(t);
+        seekMain(t);
+      }
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      setDragging(null);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [dragging, timeFromClientX, onSetIn, onSetOut, inT, outT, dur, seekMain]);
+
+  const onStripMouseDown = (e: React.MouseEvent) => {
+    // Plain click on the strip = scrub to that position (and start drag-scrubbing)
+    e.preventDefault();
+    const t = timeFromClientX(e.clientX);
+    setScrubTime(t);
+    seekMain(t);
+    dragRef.current = 'scrub';
+    setDragging('scrub');
+  };
+
+  const startDragMarker = useCallback((which: 'in' | 'out') => (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragRef.current = which;
+    setDragging(which);
+  }, []);
 
   const step = (delta: number) => {
     const next = Math.max(0, Math.min(dur, scrubTime + delta));
     setScrubTime(next);
-    seekAndDraw(next);
-  };
-
-  const handleSlider = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const t = parseFloat(e.target.value);
-    setScrubTime(t);
-    seekAndDraw(t);
+    seekMain(next);
   };
 
   return (
     <div className="mt-2 rounded-xl overflow-hidden border border-slate-700/60 bg-slate-900">
-      {/* Canvas preview — max 160px tall so it doesn't eat the whole panel */}
-      <div className="relative bg-black" style={{ height: '160px' }}>
-        <canvas ref={canvasRef} className="w-full h-full object-contain" />
-        {seeking && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-            <div className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-        {/* Timecode overlay */}
-        <div className="absolute bottom-1.5 left-1.5 bg-black/80 text-amber-400 text-xs font-mono px-2 py-0.5 rounded-md">
-          {formatDuration(scrubTime)}
+      {/* Filmstrip */}
+      <div className="relative select-none" style={{ height: '64px' }}>
+        {/* Thumbs grid */}
+        <div
+          ref={stripRef}
+          className="absolute inset-0 flex bg-black cursor-crosshair"
+          onMouseDown={onStripMouseDown}
+        >
+          {Array.from({ length: STRIP_THUMBS }).map((_, i) => (
+            <div
+              key={i}
+              className="flex-1 h-full overflow-hidden border-r border-black/40 last:border-r-0"
+              style={{ backgroundColor: '#0f172a' }}
+            >
+              {thumbs[i]
+                ? <img src={thumbs[i]} alt="" draggable={false} className="w-full h-full object-cover" />
+                : <div className="w-full h-full flex items-center justify-center"><div className="w-2 h-2 rounded-full bg-slate-700 animate-pulse" /></div>
+              }
+            </div>
+          ))}
         </div>
-        {/* IN/OUT markers */}
-        <div className="absolute bottom-1.5 right-1.5 flex gap-1">
-          {Math.abs(scrubTime - clip.startTime) < FRAME_STEP + 0.001 && (
-            <span className="bg-green-600/80 text-white text-xs px-1.5 py-0.5 rounded font-bold">IN</span>
-          )}
-          {Math.abs(scrubTime - (clip.endTime > 0 ? clip.endTime : dur)) < FRAME_STEP + 0.001 && (
-            <span className="bg-red-600/80 text-white text-xs px-1.5 py-0.5 rounded font-bold">OUT</span>
-          )}
-        </div>
-      </div>
 
-      {/* Scrub slider */}
-      <div className="px-3 pt-2 pb-1">
-        <input
-          type="range" min={0} max={dur} step={FRAME_STEP}
-          value={scrubTime}
-          onChange={handleSlider}
-          className="w-full accent-amber-500 cursor-pointer"
+        {/* Dimmed area BEFORE IN */}
+        <div className="absolute top-0 bottom-0 left-0 bg-black/60 pointer-events-none" style={{ width: pct(inT) }} />
+        {/* Dimmed area AFTER OUT */}
+        <div className="absolute top-0 bottom-0 right-0 bg-black/60 pointer-events-none" style={{ left: pct(outT) }} />
+
+        {/* IN/OUT highlighted region (subtle amber outline) */}
+        <div
+          className="absolute top-0 bottom-0 border-y-2 border-amber-500/80 pointer-events-none"
+          style={{ left: pct(inT), width: `calc(${pct(outT)} - ${pct(inT)})` }}
         />
+
+        {/* Scrub head (current frame) */}
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-cyan-400 pointer-events-none shadow-[0_0_4px_rgba(34,211,238,0.8)]"
+          style={{ left: pct(scrubTime) }}
+        />
+
+        {/* IN marker (draggable) */}
+        <div
+          onMouseDown={startDragMarker('in')}
+          className="absolute top-0 bottom-0 w-3 cursor-ew-resize z-10"
+          style={{ left: `calc(${pct(inT)} - 6px)` }}
+          title={`IN: ${formatDuration(inT)}`}
+        >
+          <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-1 bg-green-500" />
+          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-sm bg-green-500 shadow-md" />
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-sm bg-green-500 shadow-md" />
+        </div>
+
+        {/* OUT marker (draggable) */}
+        <div
+          onMouseDown={startDragMarker('out')}
+          className="absolute top-0 bottom-0 w-3 cursor-ew-resize z-10"
+          style={{ left: `calc(${pct(outT)} - 6px)` }}
+          title={`OUT: ${formatDuration(outT)}`}
+        >
+          <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-1 bg-red-500" />
+          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-sm bg-red-500 shadow-md" />
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-sm bg-red-500 shadow-md" />
+        </div>
       </div>
 
-      {/* Frame step buttons + IN/OUT setters */}
-      <div className="flex items-center gap-1 px-3 pb-2">
-        {/* Step back 1s */}
-        <button onClick={() => step(-1)}
-          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs rounded-lg transition-colors" title="-1s">
-          −1s
-        </button>
-        {/* Step back 1 frame */}
-        <button onClick={() => step(-FRAME_STEP)}
-          className="w-7 h-7 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center justify-center transition-colors" title="Previous frame (1/30s)">
-          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
-        </button>
-        {/* Step forward 1 frame */}
-        <button onClick={() => step(FRAME_STEP)}
-          className="w-7 h-7 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center justify-center transition-colors" title="Next frame (1/30s)">
-          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-        </button>
-        {/* Step forward 1s */}
-        <button onClick={() => step(1)}
-          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs rounded-lg transition-colors" title="+1s">
-          +1s
-        </button>
+      {/* Timecode + step controls */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-slate-900/80 border-t border-slate-800">
+        <div className="flex items-center gap-1 text-xs font-mono">
+          <span className="text-green-400">IN {formatDuration(inT)}</span>
+          <span className="text-slate-600">·</span>
+          <span className="text-cyan-400">@ {formatDuration(scrubTime)}</span>
+          <span className="text-slate-600">·</span>
+          <span className="text-red-400">OUT {formatDuration(outT)}</span>
+        </div>
 
         <div className="flex-1" />
 
-        {/* Set IN */}
+        {/* Step controls */}
+        <button onClick={() => step(-1)} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs rounded-lg transition-colors" title="-1s">−1s</button>
+        <button onClick={() => step(-FRAME_STEP)} className="w-7 h-7 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center justify-center transition-colors" title="Previous frame">
+          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+        </button>
+        <button onClick={() => step(FRAME_STEP)} className="w-7 h-7 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center justify-center transition-colors" title="Next frame">
+          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+        </button>
+        <button onClick={() => step(1)} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs rounded-lg transition-colors" title="+1s">+1s</button>
+
+        <div className="w-px h-5 bg-slate-700 mx-1" />
+
         <button
           onClick={() => onSetIn(scrubTime)}
           className="flex items-center gap-1 px-2 py-1 bg-green-600/20 hover:bg-green-600/40 text-green-400 text-xs font-semibold rounded-lg border border-green-500/30 transition-colors"
-          title="Set IN point to current frame"
+          title="Set IN to current scrub position"
         >
           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
           Set IN
         </button>
-        {/* Set OUT */}
         <button
           onClick={() => onSetOut(scrubTime)}
           className="flex items-center gap-1 px-2 py-1 bg-red-600/20 hover:bg-red-600/40 text-red-400 text-xs font-semibold rounded-lg border border-red-500/30 transition-colors"
-          title="Set OUT point to current frame"
+          title="Set OUT to current scrub position"
         >
           Set OUT
           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
@@ -292,6 +429,7 @@ function FrameScrubber({ clip, dur, onSetIn, onSetOut }: {
 function TrimPanel({ clip, idx, onUpdate, videoRef }: { clip: Clip; idx: number; onUpdate: (idx: number, patch: Partial<Clip>) => void; videoRef: React.RefObject<HTMLVideoElement | null> }) {
   const [dur, setDur] = useState(clip.video.duration ?? 0);
   const [chapters, setChapters] = useState<SceneChapter[]>([]);
+  const [showChapters, setShowChapters] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
   const [analyzed, setAnalyzed] = useState(false);
@@ -347,29 +485,42 @@ function TrimPanel({ clip, idx, onUpdate, videoRef }: { clip: Clip; idx: number;
             </button>
           )}
           {analyzing && <span className="text-xs text-cyan-400">{analyzeProgress}%</span>}
+
+          {/* Show / Hide detected scenes */}
+          {chapters.length > 1 && (
+            <button
+              onClick={() => setShowChapters(p => !p)}
+              className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded-lg border transition-colors ${showChapters ? 'bg-cyan-600/30 text-cyan-300 border-cyan-500/40' : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'}`}
+              title={showChapters ? 'Hide scene list' : 'Show scene list'}
+            >
+              {showChapters ? (
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+              ) : (
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78 3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+              )}
+              {showChapters ? 'Hide' : 'Show'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Frame scrubber */}
+      {/* Frame scrubber – uses the main preview video for the live frame */}
       {showScrubber && dur > 0 && (
         <FrameScrubber
           clip={clip}
           dur={dur}
+          videoRef={videoRef}
           onSetIn={t => {
             onUpdate(idx, { startTime: Math.min(t, end - FRAME_STEP) });
-            const vid = videoRef.current;
-            if (vid) vid.currentTime = t;
           }}
           onSetOut={t => {
             onUpdate(idx, { endTime: Math.max(t, clip.startTime + FRAME_STEP) });
-            const vid = videoRef.current;
-            if (vid) vid.currentTime = t;
           }}
         />
       )}
 
       {/* Chapter thumbnails */}
-      {chapters.length > 1 && (
+      {chapters.length > 1 && showChapters && (
         <div>
           <p className="text-xs text-slate-600 mb-1.5">Select scene as IN/OUT:</p>
           <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -440,15 +591,53 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
   const [videoStyle, setVideoStyle] = useState<React.CSSProperties>({});
   const [flashOverlay, setFlashOverlay] = useState(false);
 
-  // ── GIF export state ───────────────────────────────────────────────────────
+  // ── Export state (shared between GIF + WebM exporters) ────────────────────
+  type ExportFormat = 'gif' | 'webm';
   const [showExport, setShowExport] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('webm');
   const [gifFps, setGifFps] = useState(10);
   const [gifWidth, setGifWidth] = useState(480);
-  const [gifMaxSec] = useState(180); // max 3 minutes per clip
+  const [gifMaxSec] = useState(180); // max 3 minutes per clip (GIF only)
+  // WebM defaults – higher fps/width are fine for video
+  const [webmFps, setWebmFps] = useState(30);
+  const [webmWidth, setWebmWidth] = useState(1280);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportClipIdx, setExportClipIdx] = useState(0);
   const exportCancelRef = useRef(false);
+
+  const handleExportWebM = useCallback(async () => {
+    if (clips.length === 0 || exporting) return;
+    setExporting(true);
+    setExportProgress(0);
+    setExportClipIdx(0);
+    exportCancelRef.current = false;
+
+    try {
+      const blob = await exportClipsToWebM(
+        clips.map(c => ({
+          url: c.video.url,
+          startTime: c.startTime,
+          endTime: c.endTime,
+        })),
+        {
+          width: webmWidth,
+          fps: webmFps,
+          onProgress: (p) => setExportProgress(p),
+          cancelRef: exportCancelRef,
+        },
+      );
+      if (!exportCancelRef.current) {
+        downloadBlob(blob, `editor-export-${Date.now()}.webm`);
+      }
+    } catch (e) {
+      console.error('WebM export failed', e);
+      alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setExporting(false);
+      setExportProgress(0);
+    }
+  }, [clips, exporting, webmFps, webmWidth]);
 
   const handleExportGif = useCallback(async () => {
     if (clips.length === 0 || exporting) return;
@@ -792,17 +981,17 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
           <div className="flex-1" />
           <span className="text-slate-700 text-xs">Space · Esc</span>
 
-          {/* Export GIF button */}
+          {/* Export button (opens GIF + WebM panel) */}
           {clips.length > 0 && (
             <button
               onClick={() => setShowExport(p => !p)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors flex-none ${showExport ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border-emerald-500/30'}`}
-              title="Export as GIF"
+              title="Export"
             >
               <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M19 9h-4V3H9v6H5l7 7 7-7zm-8 2V5h2v6h1.17L12 13.17 9.83 11H11zm-6 7h14v2H5z"/>
               </svg>
-              Export GIF
+              Export
             </button>
           )}
 
@@ -811,14 +1000,17 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
           </button>
         </div>
 
-        {/* ── Export GIF panel ── */}
+        {/* ── Export panel (GIF + WebM) ── */}
         {showExport && (
           <div className="flex-none bg-slate-900/90 border-b border-slate-800/60 px-4 py-3">
             {exporting ? (
               <div className="flex items-center gap-3">
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-emerald-400 font-medium">Exporting GIF… Clip {exportClipIdx + 1}/{clips.length}</span>
+                    <span className="text-xs text-emerald-400 font-medium">
+                      Exporting {exportFormat === 'webm' ? 'WebM' : 'GIF'}
+                      {exportFormat === 'gif' ? `… Clip ${exportClipIdx + 1}/${clips.length}` : ''}
+                    </span>
                     <span className="text-xs text-slate-400 font-mono">{exportProgress}%</span>
                   </div>
                   <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
@@ -834,53 +1026,117 @@ export function DirectorMode({ videos, onClose }: DirectorModeProps) {
               </div>
             ) : (
               <div className="flex items-center gap-4 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-slate-500">FPS</label>
-                  <select value={gifFps} onChange={e => setGifFps(Number(e.target.value))}
-                    className="text-xs bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 cursor-pointer">
-                    <option value={5}>5</option>
-                    <option value={8}>8</option>
-                    <option value={10}>10</option>
-                    <option value={12}>12</option>
-                    <option value={15}>15</option>
-                    <option value={20}>20</option>
-                    <option value={24}>24</option>
-                    <option value={25}>25</option>
-                    <option value={30}>30</option>
-                  </select>
+                {/* Format toggle */}
+                <div className="flex items-center gap-1 bg-slate-800/60 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setExportFormat('webm')}
+                    className={`px-2.5 py-1 text-xs rounded-md transition-colors ${exportFormat === 'webm' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                    title="Export as WebM video"
+                  >
+                    WebM
+                  </button>
+                  <button
+                    onClick={() => setExportFormat('gif')}
+                    className={`px-2.5 py-1 text-xs rounded-md transition-colors ${exportFormat === 'gif' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                    title="Export as animated GIF"
+                  >
+                    GIF
+                  </button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-slate-500">Width</label>
-                  <select value={gifWidth} onChange={e => setGifWidth(Number(e.target.value))}
-                    className="text-xs bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 cursor-pointer">
-                    <option value={320}>320px</option>
-                    <option value={480}>480px</option>
-                    <option value={640}>640px</option>
-                    <option value={800}>800px</option>
-                  </select>
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <div className="text-xs text-slate-600">
-                    ~{clips.length} clip{clips.length !== 1 ? 's' : ''} · {gifFps} fps · {gifWidth}px · <span className="text-emerald-400">(max 3 min per clip)</span>
-                  </div>
-                  {gifFps >= 24 && (
-                    <div className="flex items-center gap-1 text-xs text-amber-400">
-                      <svg className="w-3 h-3 flex-none" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
-                      </svg>
-                      High FPS — export will be slow and file size large. 10–15 fps recommended for GIFs.
+
+                {exportFormat === 'gif' ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-slate-500">FPS</label>
+                      <select value={gifFps} onChange={e => setGifFps(Number(e.target.value))}
+                        className="text-xs bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 cursor-pointer">
+                        <option value={5}>5</option>
+                        <option value={8}>8</option>
+                        <option value={10}>10</option>
+                        <option value={12}>12</option>
+                        <option value={15}>15</option>
+                        <option value={20}>20</option>
+                        <option value={24}>24</option>
+                        <option value={25}>25</option>
+                        <option value={30}>30</option>
+                      </select>
                     </div>
-                  )}
-                </div>
-                <button
-                  onClick={handleExportGif}
-                  className="ml-auto flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition-colors"
-                >
-                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zm-8 2V5h2v6h1.17L12 13.17 9.83 11H11zm-6 7h14v2H5z"/>
-                  </svg>
-                  Start Export
-                </button>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-slate-500">Width</label>
+                      <select value={gifWidth} onChange={e => setGifWidth(Number(e.target.value))}
+                        className="text-xs bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 cursor-pointer">
+                        <option value={320}>320px</option>
+                        <option value={480}>480px</option>
+                        <option value={640}>640px</option>
+                        <option value={800}>800px</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <div className="text-xs text-slate-600">
+                        ~{clips.length} clip{clips.length !== 1 ? 's' : ''} · {gifFps} fps · {gifWidth}px · <span className="text-emerald-400">(max 3 min per clip)</span>
+                      </div>
+                      {gifFps >= 24 && (
+                        <div className="flex items-center gap-1 text-xs text-amber-400">
+                          <svg className="w-3 h-3 flex-none" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                          </svg>
+                          High FPS — export will be slow and file size large. 10–15 fps recommended for GIFs.
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleExportGif}
+                      className="ml-auto flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zm-8 2V5h2v6h1.17L12 13.17 9.83 11H11zm-6 7h14v2H5z"/>
+                      </svg>
+                      Start Export
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-slate-500">FPS</label>
+                      <select value={webmFps} onChange={e => setWebmFps(Number(e.target.value))}
+                        className="text-xs bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 cursor-pointer">
+                        <option value={24}>24</option>
+                        <option value={25}>25</option>
+                        <option value={30}>30</option>
+                        <option value={60}>60</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-slate-500">Width</label>
+                      <select value={webmWidth} onChange={e => setWebmWidth(Number(e.target.value))}
+                        className="text-xs bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 cursor-pointer">
+                        <option value={640}>640p</option>
+                        <option value={1280}>720p</option>
+                        <option value={1920}>1080p</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <div className="text-xs text-slate-600">
+                        VP9/VP8 · {webmFps} fps · {webmWidth}px · <span className="text-cyan-400">video-only (no audio)</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-amber-400/80">
+                        <svg className="w-3 h-3 flex-none" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                        </svg>
+                        Real-time encode — output ≈ timeline duration.
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleExportWebM}
+                      className="ml-auto flex items-center gap-1.5 px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-lg transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zm-8 2V5h2v6h1.17L12 13.17 9.83 11H11zm-6 7h14v2H5z"/>
+                      </svg>
+                      Start Export
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>

@@ -26,7 +26,19 @@ function getDB(): Promise<IDBDatabase> {
 }
 
 // ── In-memory fallback ────────────────────────────────────────────────────────
+// Capped to avoid unbounded memory growth. Each base64 JPEG ≈ 30–80 KB, so
+// 500 entries ≈ 15–40 MB worst case. The IndexedDB store keeps the full set.
+const MEM_CACHE_MAX = 500;
 const memCache = new Map<string, string>();
+
+function memPut(id: string, dataUrl: string): void {
+  // Evict oldest entry first (Map preserves insertion order)
+  if (memCache.size >= MEM_CACHE_MAX && !memCache.has(id)) {
+    const firstKey = memCache.keys().next().value;
+    if (firstKey !== undefined) memCache.delete(firstKey);
+  }
+  memCache.set(id, dataUrl);
+}
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -49,7 +61,7 @@ export async function thumbGet(id: string): Promise<string | null> {
 
 /** Write a thumbnail to IndexedDB (and memory). Fire-and-forget. */
 export function thumbPut(id: string, dataUrl: string): void {
-  memCache.set(id, dataUrl);
+  memPut(id, dataUrl);
   getDB().then(db => {
     const tx = db.transaction(STORE, 'readwrite');
     tx.objectStore(STORE).put(dataUrl, id);

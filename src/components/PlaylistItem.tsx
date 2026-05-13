@@ -2,8 +2,16 @@ import { useState, useEffect } from 'react';
 import type { VideoFile } from '../types/video';
 import { formatDuration } from '../utils/format';
 
-// Shared thumbnail cache
+// Shared thumbnail cache (capped to avoid unbounded memory growth)
+const THUMB_CACHE_MAX = 200;
 const thumbnailCache = new Map<string, string>();
+function thumbnailCachePut(id: string, dataUrl: string) {
+  if (thumbnailCache.size >= THUMB_CACHE_MAX && !thumbnailCache.has(id)) {
+    const firstKey = thumbnailCache.keys().next().value;
+    if (firstKey !== undefined) thumbnailCache.delete(firstKey);
+  }
+  thumbnailCache.set(id, dataUrl);
+}
 
 function generateThumbnail(url: string, videoId: string): Promise<string> {
   if (thumbnailCache.has(videoId)) {
@@ -36,7 +44,7 @@ function generateThumbnail(url: string, videoId: string): Promise<string> {
         if (!ctx) { cleanup(); reject(new Error('No context')); return; }
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        thumbnailCache.set(videoId, dataUrl);
+        thumbnailCachePut(videoId, dataUrl);
         cleanup();
         resolve(dataUrl);
       } catch (e) {
