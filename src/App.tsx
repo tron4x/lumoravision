@@ -1,28 +1,35 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
 import { useFileSystem } from './hooks/useFileSystem';
 import { useSort } from './hooks/useSort';
 import { useCollections } from './hooks/useCollections';
 import type { CollectionColor } from './hooks/useCollections';
 import { VideoCard } from './components/VideoCard';
 import { VideoListRow } from './components/VideoListRow';
-import { VideoPlayer } from './components/VideoPlayer';
 import { ImageCard } from './components/ImageCard';
-import { ImageViewer } from './components/ImageViewer';
 import { SplashScreen } from './components/SplashScreen';
-import { InfoModal } from './components/InfoModal';
-import { ShortcutsModal } from './components/ShortcutsModal';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar, NewCollectionDialog } from './components/Sidebar';
-import { CollectionModal } from './components/CollectionModal';
-import { Storyboard } from './components/Storyboard';
-import { SplitscreenPlayer } from './components/SplitscreenPlayer';
-import { DirectorMode } from './components/DirectorMode';
-import { Slideshow } from './components/Slideshow';
 import { PlaylistItem } from './components/PlaylistItem';
-import { EasterEgg } from './components/EasterEgg';
-import { LockScreen } from './components/LockScreen';
 import { formatFileSize } from './utils/format';
 import type { VideoFile, ImageFile, ViewMode } from './types/video';
+
+// ── Lazy-loaded heavy modal-only components ──────────────────────────────
+// These only render in response to a user action (open a video, open the
+// editor, etc.), so we ship them as separate chunks that download on demand
+// instead of bloating the initial bundle. Each `lazy()` call creates its
+// own JS chunk. Components that are exported as named exports are wrapped
+// in tiny adapters because React.lazy expects a module with a `default`.
+const VideoPlayer       = lazy(() => import('./components/VideoPlayer').then(m => ({ default: m.VideoPlayer })));
+const ImageViewer       = lazy(() => import('./components/ImageViewer').then(m => ({ default: m.ImageViewer })));
+const InfoModal         = lazy(() => import('./components/InfoModal').then(m => ({ default: m.InfoModal })));
+const ShortcutsModal    = lazy(() => import('./components/ShortcutsModal').then(m => ({ default: m.ShortcutsModal })));
+const CollectionModal   = lazy(() => import('./components/CollectionModal').then(m => ({ default: m.CollectionModal })));
+const Storyboard        = lazy(() => import('./components/Storyboard').then(m => ({ default: m.Storyboard })));
+const SplitscreenPlayer = lazy(() => import('./components/SplitscreenPlayer').then(m => ({ default: m.SplitscreenPlayer })));
+const DirectorMode      = lazy(() => import('./components/DirectorMode').then(m => ({ default: m.DirectorMode })));
+const Slideshow         = lazy(() => import('./components/Slideshow').then(m => ({ default: m.Slideshow })));
+const EasterEgg         = lazy(() => import('./components/EasterEgg').then(m => ({ default: m.EasterEgg })));
+const LockScreen        = lazy(() => import('./components/LockScreen').then(m => ({ default: m.LockScreen })));
 
 export default function App() {
   const [splashDone, setSplashDone] = useState(false);
@@ -754,111 +761,124 @@ export default function App() {
         )}
       </div>
 
-      {/* Video Player */}
-      {activeVideo && (
-        <VideoPlayer
-          key={activeVideo.id}
-          video={activeVideo}
-          onClose={handleClose}
-          onPrev={handlePrev}
-          onNext={handleNext}
-          hasPrev={activeIndex > 0}
-          hasNext={activeIndex < playQueue.length - 1}
-        />
-      )}
+      {/* All lazy-loaded modals share one Suspense boundary. The fallback is
+          a tiny full-screen spinner — most chunks are <100 kB so it appears
+          for only a single frame after first user click. */}
+      <Suspense
+        fallback={
+          <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none">
+            <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        }
+      >
+        {/* Video Player */}
+        {activeVideo && (
+          <VideoPlayer
+            key={activeVideo.id}
+            video={activeVideo}
+            onClose={handleClose}
+            onPrev={handlePrev}
+            onNext={handleNext}
+            hasPrev={activeIndex > 0}
+            hasNext={activeIndex < playQueue.length - 1}
+          />
+        )}
 
-      {/* Image Viewer */}
-      {activeImage && (
-        <ImageViewer
-          image={activeImage}
-          images={filteredImages}
-          onClose={() => setActiveImage(null)}
-          onNavigate={setActiveImage}
-        />
-      )}
+        {/* Image Viewer */}
+        {activeImage && (
+          <ImageViewer
+            image={activeImage}
+            images={filteredImages}
+            onClose={() => setActiveImage(null)}
+            onNavigate={setActiveImage}
+          />
+        )}
 
-      {showInfo && <InfoModal onClose={() => setShowInfo(false)} />}
+        {showInfo && <InfoModal onClose={() => setShowInfo(false)} />}
 
-      {/* Storyboard View */}
-      {storyboardVideo && (
-        <Storyboard
-          video={storyboardVideo}
-          onClose={() => setStoryboardVideo(null)}
-          onSeekTo={() => {
-            setActiveVideo(storyboardVideo);
-          }}
-        />
-      )}
+        {/* Storyboard View */}
+        {storyboardVideo && (
+          <Storyboard
+            video={storyboardVideo}
+            onClose={() => setStoryboardVideo(null)}
+            onSeekTo={() => {
+              setActiveVideo(storyboardVideo);
+            }}
+          />
+        )}
 
-      {/* Splitscreen Player */}
-      {splitscreenLeft && (
-        <SplitscreenPlayer
-          videoLeft={splitscreenLeft}
-          videoRight={splitscreenRight}
-          allVideos={filteredVideos}
-          onClose={() => {
-            setSplitscreenLeft(null);
-            setSplitscreenRight(null);
-          }}
-          onSelectRight={setSplitscreenRight}
-        />
-      )}
+        {/* Splitscreen Player */}
+        {splitscreenLeft && (
+          <SplitscreenPlayer
+            videoLeft={splitscreenLeft}
+            videoRight={splitscreenRight}
+            allVideos={filteredVideos}
+            onClose={() => {
+              setSplitscreenLeft(null);
+              setSplitscreenRight(null);
+            }}
+            onSelectRight={setSplitscreenRight}
+          />
+        )}
 
-      {/* Director Mode */}
-      {directorOpen && (
-        <DirectorMode
-          videos={filteredVideos}
-          onClose={() => setDirectorOpen(false)}
-        />
-      )}
+        {/* Director Mode */}
+        {directorOpen && (
+          <DirectorMode
+            videos={filteredVideos}
+            onClose={() => setDirectorOpen(false)}
+          />
+        )}
 
-      {/* Slideshow */}
-      {slideshowStartIndex !== null && filteredImages.length > 0 && (
-        <Slideshow
-          images={filteredImages}
-          startIndex={slideshowStartIndex}
-          onClose={() => setSlideshowStartIndex(null)}
-        />
-      )}
+        {/* Slideshow */}
+        {slideshowStartIndex !== null && filteredImages.length > 0 && (
+          <Slideshow
+            images={filteredImages}
+            startIndex={slideshowStartIndex}
+            onClose={() => setSlideshowStartIndex(null)}
+          />
+        )}
 
-      {/* Collection Modal – manage members of a collection */}
-      {editingCollection && (
-        <CollectionModal
-          collection={editingCollection}
-          allVideos={allVideos}
-          allImages={allImages}
-          onClose={() => setEditingCollectionId(null)}
-          onRename={renameCollection}
-          onRecolor={recolorCollection}
-          onToggle={toggleInCollection}
-          onDelete={(id) => {
-            deleteCollection(id);
-            if (activeCollectionId === id) setActiveCollectionId(null);
-          }}
-        />
-      )}
+        {/* Collection Modal – manage members of a collection */}
+        {editingCollection && (
+          <CollectionModal
+            collection={editingCollection}
+            allVideos={allVideos}
+            allImages={allImages}
+            onClose={() => setEditingCollectionId(null)}
+            onRename={renameCollection}
+            onRecolor={recolorCollection}
+            onToggle={toggleInCollection}
+            onDelete={(id) => {
+              deleteCollection(id);
+              if (activeCollectionId === id) setActiveCollectionId(null);
+            }}
+          />
+        )}
 
-      {/* New Collection Dialog */}
+        {/* Keyboard Shortcuts Modal */}
+        {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
+
+        {/* Easter Egg – Konami Code */}
+        {showEasterEgg && <EasterEgg onClose={() => setShowEasterEgg(false)} />}
+
+        {/* Lock Screen - blocks everything */}
+        {isLocked && <LockScreen onUnlock={() => {
+          // Clear lock state from localStorage on successful unlock
+          localStorage.removeItem('lumoravision_permanent_lock');
+          localStorage.removeItem('lumoravision_permanent_lock_attempts');
+          setIsLocked(false);
+        }} />}
+      </Suspense>
+
+      {/* New Collection Dialog — kept eagerly loaded because it's tiny and
+          shares the Sidebar.tsx chunk anyway (NewCollectionDialog is also
+          a named export from that file). */}
       {showNewCollectionDialog && (
         <NewCollectionDialog
           onConfirm={handleCreateCollection}
           onCancel={() => setShowNewCollectionDialog(false)}
         />
       )}
-
-      {/* Keyboard Shortcuts Modal */}
-      {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
-
-      {/* Easter Egg – Konami Code */}
-      {showEasterEgg && <EasterEgg onClose={() => setShowEasterEgg(false)} />}
-
-      {/* Lock Screen - blocks everything */}
-      {isLocked && <LockScreen onUnlock={() => {
-        // Clear lock state from localStorage on successful unlock
-        localStorage.removeItem('lumoravision_permanent_lock');
-        localStorage.removeItem('lumoravision_permanent_lock_attempts');
-        setIsLocked(false);
-      }} />}
     </div>
   );
 }
