@@ -11,7 +11,7 @@ export function InfoModal({ onClose }: InfoModalProps) {
       onClick={onClose}
     >
       <div
-        className="relative flex flex-col bg-slate-950 rounded-2xl border border-slate-800/60 shadow-2xl shadow-black/60 overflow-hidden max-w-lg w-full mx-4"
+        className="relative flex flex-col bg-slate-950 rounded-2xl border border-slate-800/60 shadow-2xl shadow-black/60 overflow-hidden max-w-lg w-full mx-4 max-h-[90vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* Title bar */}
@@ -36,10 +36,34 @@ export function InfoModal({ onClose }: InfoModalProps) {
         </div>
 
         {/* Info text */}
-        <div className="px-6 py-5 flex flex-col items-center gap-3 border-t border-slate-800/60">
+        <div className="px-6 py-5 flex flex-col items-center gap-3 border-t border-slate-800/60 overflow-y-auto">
           <span className="text-xs text-slate-500 tracking-widest uppercase">Modern Media Player</span>
           <div className="text-xs text-slate-500 font-mono">v{pkg.version}</div>
           <div className="text-xs text-slate-600">Videos · Images · Screenshots · GIF Export</div>
+
+          <div className="w-full grid grid-cols-1 gap-2 mt-2 text-left">
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 mb-1">Privacy</div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Lumoravision runs client-side in your browser. Your videos and images are read locally and are not uploaded,
+                stored on a server, tracked, or sent to a cloud service.
+              </p>
+            </div>
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-amber-400 mb-1">Responsible use</div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Only open, edit and export media you own or are legally allowed to use. You are responsible for the files
+                you process and export with this app.
+              </p>
+            </div>
+            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400 mb-1">Safety limits</div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Heavy processing is intentionally limited to protect your browser: Auto-Highlights supports videos up to
+                30 minutes, and graded video export records in real time.
+              </p>
+            </div>
+          </div>
 
           <div className="flex flex-col items-center gap-1.5 mt-1">
             <div className="flex items-center gap-2 text-sm text-slate-400">

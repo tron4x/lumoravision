@@ -7,17 +7,33 @@
  * we store folder names in localStorage so the user knows which folders to re-open.
  */
 
+// IMPORTANT: this DB is shared with `useCollections.ts`. Both must agree on
+// the version number, otherwise whichever module opens with the older
+// number will get a VersionError once the DB has been upgraded by the
+// other. We bump in lockstep with the highest version any caller needs
+// (currently 2, set by useCollections). The `onupgradeneeded` handler is
+// idempotent: it only creates stores that don't already exist, so it's
+// safe to run from either module first.
 const DB_NAME = 'videoplayer-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'folder-handles';
 const FALLBACK_KEY = 'videoplayer-fallback-folders';
 
-// Open IndexedDB
+// Open IndexedDB. The upgrade handler creates BOTH the folder-handles
+// store (this module) and the collections store (useCollections.ts) — even
+// though we only read folder-handles here. This guarantees that whichever
+// hook initialises the DB first leaves it in a state both can read.
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
-      req.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('collections')) {
+        db.createObjectStore('collections', { keyPath: 'id' });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

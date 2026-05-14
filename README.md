@@ -73,6 +73,35 @@ Your files stay exactly where they are — on your hard drive.
 
 The only network requests Lumoravision ever makes are to load the app itself (HTML/CSS/JS). <br>After that, everything runs offline.
 
+### Responsible use
+
+Lumoravision is a local media tool. You are responsible for the files you open, edit, export or share with it.
+
+- Only process media you own or are legally allowed to use.
+- Do not use Lumoravision to infringe copyright, bypass platform rules, or distribute unlawful content.
+- Exports (screenshots, GIFs, graded videos, storyboards) are created locally and saved to your machine; you are responsible for how they are used.
+
+### Safety limits
+
+Some features are intentionally capped to protect the browser from high memory usage or CPU spikes:
+
+| Feature | Limit / behaviour | Reason |
+|:---|:---|:---|
+| Auto-Highlights | Max input duration: **30 minutes** | Prevents out-of-memory crashes during audio/video analysis |
+| Color-grade video export | **Real-time** WebM recording | Browser-native MediaRecorder must play/record the video in real time |
+| GIF export | Configurable FPS/width and cancellable progress | Prevents runaway memory usage on long/high-res clips |
+| Thumbnails / previews | Queued and lazy-loaded | Keeps large folders responsive |
+
+If you need longer/heavier exports, use the browser export as a preview step and finish in a desktop editor such as DaVinci Resolve, Premiere, or FFmpeg.
+
+### No backend by design
+
+Lumoravision intentionally ships without backend uploads, accounts, analytics or cloud processing. This reduces abuse risk and keeps private media private. If a future deployment adds a backend, it must add proper authentication, rate limits, upload quotas, server-side file validation and abuse reporting.
+
+### License / branding note
+
+Lumoravision is currently licensed under **Apache License 2.0**. That is an open-source license: others may use, modify and redistribute the code under its terms. The license does **not** grant trademark rights to the project name, logos, or branding beyond what the license permits. If you want the project to be closed-source or commercially restricted, replace `LICENSE` with an appropriate proprietary license before publishing.
+
 ---
 
 ## 🔥 Why Lumoravision?
@@ -300,6 +329,18 @@ docker run -d --name lumoravision -p 8080:80 --restart unless-stopped lumoravisi
 | `Dockerfile` | Multi-stage: Node 24 Alpine (build) → Nginx 1.29 Alpine (serve) |
 | `nginx.conf` | SPA routing, gzip, aggressive asset caching, security headers |
 | `docker-compose.yml` | One-command start on port 8080 |
+
+### Public deployment hardening
+
+The Docker/Nginx setup includes security headers for public deployments:
+
+- `Content-Security-Policy` restricts scripts, frames, objects and network destinations.
+- `X-Content-Type-Options: nosniff` reduces MIME confusion attacks.
+- `X-Frame-Options: SAMEORIGIN` blocks most clickjacking embeds.
+- `Referrer-Policy: strict-origin-when-cross-origin` limits referrer leakage.
+- `Permissions-Policy` disables camera, microphone, geolocation, payment, USB and Bluetooth APIs.
+
+No API keys or secrets are required for normal operation. Do not add secrets to the frontend; anything bundled into a browser app is public.
 
 ---
 

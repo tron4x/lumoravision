@@ -6,6 +6,8 @@ import type { SceneChapter } from '../utils/sceneDetection';
 import { exportGif, downloadBlob } from '../utils/gifExport';
 import { savePosition, loadPosition } from '../hooks/usePlaybackPosition';
 import { openSession as openScrubSession, releaseSession as releaseScrubSession, getScrubThumb } from '../utils/scrubThumbs';
+import { ColorGradePanel } from './ColorGradePanel';
+import { FrameScrubber } from './FrameScrubber';
 interface VideoPlayerProps {
   video: VideoFile;
   onClose: () => void;
@@ -19,6 +21,12 @@ const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
 export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+  // Mirrored DOM refs in state so children that need to read the live
+  // elements (e.g. the WebGL color-grade overlay) get a re-render once the
+  // refs are populated, without us reading `.current` during render.
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const [videoContainerEl, setVideoContainerEl] = useState<HTMLDivElement | null>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -46,12 +54,16 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
   
   // GIF export state
   const [showGifPanel, setShowGifPanel] = useState(false);
+  const [showColorGrade, setShowColorGrade] = useState(false);
   const [gifStartTime, setGifStartTime] = useState(0);
   const [gifEndTime, setGifEndTime] = useState(5);
   const [gifFps, setGifFps] = useState(10);
   const [gifWidth, setGifWidth] = useState(320);
   const [isExportingGif, setIsExportingGif] = useState(false);
   const [gifProgress, setGifProgress] = useState(0);
+  // GIF panel: optional Editor-style helpers (filmstrip scrubber + scene picker)
+  const [gifShowScrubber, setGifShowScrubber] = useState(false);
+  const [gifShowScenes, setGifShowScenes] = useState(false);
 
   // Scene detection state – reset automatically when video.url changes via key prop in App.tsx
   const [chapters, setChapters] = useState<SceneChapter[]>([]);
@@ -391,9 +403,20 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
         </div>
 
         {/* Video */}
-        <div className="relative bg-black overflow-hidden flex-1 min-h-0" onMouseMove={resetControlsTimer} onMouseEnter={resetControlsTimer}>
+        <div
+          ref={el => {
+            videoContainerRef.current = el;
+            setVideoContainerEl(el);
+          }}
+          className="relative bg-black overflow-hidden flex-1 min-h-0"
+          onMouseMove={resetControlsTimer}
+          onMouseEnter={resetControlsTimer}
+        >
           <video
-            ref={videoRef}
+            ref={el => {
+              (videoRef as React.MutableRefObject<HTMLVideoElement | null>).current = el;
+              setVideoEl(el);
+            }}
             src={video.url}
             className="w-full h-full object-contain"
             onTimeUpdate={handleTimeUpdate}
@@ -414,6 +437,18 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" /></svg>
               Loop
             </div>
+          )}
+
+          {/* Color-Grading overlay – mounts the LUT shader canvas inside this
+              same container. The panel itself renders its UI on top, with
+              pointer events enabled, so the user can tweak the look while
+              the video keeps playing underneath. */}
+          {showColorGrade && (
+            <ColorGradePanel
+              videoElement={videoEl}
+              containerEl={videoContainerEl}
+              onClose={() => setShowColorGrade(false)}
+            />
           )}
         </div>
 
@@ -551,6 +586,18 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M11.5 9H13v6h-1.5V9zM9 9H6c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-2H8.5v1.5h-2v-3H10V10c0-.55-.45-1-1-1zm10 1.5V9h-4.5v6H16v-2h2v-1.5h-2v-1h3z"/></svg>
             </button>
+            {/* Color-Grading toggle */}
+            <button
+              onClick={() => setShowColorGrade(p => !p)}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${showColorGrade ? 'bg-pink-600 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300'}`}
+              title="Color Grading (LUT)"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 22C6.49 22 2 17.51 2 12S6.49 2 12 2s10 4.04 10 9c0 3.31-2.69 6-6 6h-1.77c-.28 0-.5.22-.5.5 0 .12.05.23.13.33.41.47.64 1.06.64 1.67A2.5 2.5 0 0112 22zm0-18c-4.41 0-8 3.59-8 8s3.59 8 8 8c.28 0 .5-.22.5-.5a.54.54 0 00-.14-.35c-.41-.46-.63-1.05-.63-1.65a2.5 2.5 0 012.5-2.5H16c2.21 0 4-1.79 4-4 0-3.86-3.59-7-8-7z"/>
+                <circle cx="6.5" cy="11.5" r="1.5"/><circle cx="9.5" cy="7.5" r="1.5"/>
+                <circle cx="14.5" cy="7.5" r="1.5"/><circle cx="17.5" cy="11.5" r="1.5"/>
+              </svg>
+            </button>
             <button onClick={toggleFullscreen} className="w-8 h-8 rounded-lg bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300 flex items-center justify-center transition-colors" title="Fullscreen">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v2H5v5H3V3zm11 0h7v7h-2V5h-5V3zM3 14h2v5h5v2H3v-7zm16 5h-5v2h7v-7h-2v5z" /></svg>
             </button>
@@ -619,11 +666,112 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
                 <svg className="w-3.5 h-3.5 text-purple-400 flex-none" fill="currentColor" viewBox="0 0 24 24"><path d="M11.5 9H13v6h-1.5V9zM9 9H6c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-2H8.5v1.5h-2v-3H10V10c0-.55-.45-1-1-1zm10 1.5V9h-4.5v6H16v-2h2v-1.5h-2v-1h3z"/></svg>
                 <span className="text-xs font-semibold text-slate-300">GIF Export – Select range:</span>
                 <span className="text-xs text-slate-500">(max 3 min)</span>
+
+                {/* ── Editor-style helper toggles ──────────────────────── */}
+                {/* Frames: filmstrip + draggable IN/OUT markers */}
+                <button
+                  onClick={() => setGifShowScrubber(p => !p)}
+                  className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded-lg border transition-colors ${gifShowScrubber ? 'bg-purple-600/30 text-purple-300 border-purple-500/40' : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'}`}
+                  title="Frame-by-frame scrubber (filmstrip)"
+                >
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M18 3v2h-2V3H8v2H6V3H4v18h2v-2h2v2h8v-2h2v2h2V3h-2zM8 17H6v-2h2v2zm0-4H6v-2h2v2zm0-4H6V7h2v2zm10 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V7h2v2z"/></svg>
+                  Frames
+                </button>
+
+                {/* Scenes: detect + click-to-set IN/OUT */}
+                {chapters.length === 0 && !isAnalyzing && (
+                  <button
+                    onClick={() => { runSceneDetection(); setGifShowScenes(true); }}
+                    className="flex items-center gap-1 px-2 py-0.5 bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-400 text-xs rounded-lg border border-cyan-500/30 transition-colors"
+                    title="Detect scenes & pick a range from them"
+                  >
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z"/></svg>
+                    Scenes
+                  </button>
+                )}
+                {isAnalyzing && (
+                  <span className="text-xs text-cyan-400">Analyzing… {analyzeProgress}%</span>
+                )}
+                {chapters.length > 1 && (
+                  <button
+                    onClick={() => setGifShowScenes(p => !p)}
+                    className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded-lg border transition-colors ${gifShowScenes ? 'bg-cyan-600/30 text-cyan-300 border-cyan-500/40' : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'}`}
+                    title={gifShowScenes ? 'Hide scene picker' : 'Show scene picker'}
+                  >
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z"/></svg>
+                    Scenes ({chapters.length})
+                  </button>
+                )}
+
                 <span className={`text-xs font-mono ml-auto ${(gifEndTime - gifStartTime) > 180 ? 'text-red-400' : 'text-purple-400'}`}>
                   {(gifEndTime - gifStartTime).toFixed(1)}s duration
                   {(gifEndTime - gifStartTime) > 180 && ' ⚠️'}
                 </span>
               </div>
+
+              {/* ── Filmstrip frame scrubber (toggleable) ───────────── */}
+              {gifShowScrubber && (
+                <div className="mb-3">
+                  <FrameScrubber
+                    videoUrl={video.url}
+                    dur={duration}
+                    inT={gifStartTime}
+                    outT={Math.max(gifStartTime + 1 / 30, gifEndTime)}
+                    onSetIn={t => {
+                      setGifStartTime(t);
+                      if (t >= gifEndTime) setGifEndTime(Math.min(duration, t + 1));
+                    }}
+                    onSetOut={t => {
+                      setGifEndTime(t);
+                      if (t <= gifStartTime) setGifStartTime(Math.max(0, t - 1));
+                    }}
+                    videoRef={videoRef}
+                    accent="purple"
+                  />
+                </div>
+              )}
+
+              {/* ── Scene picker (toggleable) ───────────────────────── */}
+              {gifShowScenes && chapters.length > 1 && (
+                <div className="mb-3">
+                  <p className="text-xs text-slate-600 mb-1.5">Click a scene to use it as the GIF range:</p>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {chapters.map((ch, ci) => {
+                      const nextCh = chapters[ci + 1];
+                      const chEnd = nextCh ? nextCh.time : duration;
+                      const isIn = Math.abs(gifStartTime - ch.time) < 0.5;
+                      const isOut = Math.abs(gifEndTime - chEnd) < 0.5;
+                      return (
+                        <div key={ch.time} className="flex-none flex flex-col gap-0.5">
+                          <button
+                            onClick={() => {
+                              // Clamp to 3-minute GIF cap
+                              const newStart = ch.time;
+                              const newEnd = Math.min(chEnd, newStart + 180);
+                              setGifStartTime(newStart);
+                              setGifEndTime(newEnd);
+                              const vid = videoRef.current;
+                              if (vid) vid.currentTime = newStart;
+                            }}
+                            className={`w-16 h-10 rounded-lg overflow-hidden border-2 transition-all relative ${isIn && isOut ? 'border-purple-500' : 'border-slate-700 hover:border-purple-400'}`}
+                            title={`Scene ${ci + 1}: ${formatDuration(ch.time)} – ${formatDuration(chEnd)}`}
+                          >
+                            {ch.thumbnail
+                              ? <img src={ch.thumbnail} alt="" className="w-full h-full object-cover" />
+                              : <div className="w-full h-full bg-slate-800 flex items-center justify-center"><span className="text-slate-600 text-xs">{ci + 1}</span></div>}
+                            {(isIn && isOut) && (
+                              <div className="absolute inset-0 bg-purple-500/20 flex items-center justify-center">
+                                <svg className="w-4 h-4 text-purple-300" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                              </div>
+                            )}
+                          </button>
+                          <span className="text-xs text-slate-600 font-mono text-center">{formatDuration(ch.time)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Range sliders with frame-by-frame buttons */}
               <div className="grid grid-cols-2 gap-4 mb-3">

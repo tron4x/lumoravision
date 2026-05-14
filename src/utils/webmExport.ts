@@ -7,12 +7,29 @@
  * compositor with MediaRecorder.
  *
  * Why play instead of seek-loop?
- *   The previous implementation seeked frame-by-frame, but
  *   `canvas.captureStream(fps)` writes the timeline at real-time speed
- *   regardless of how fast we feed it — that produced slow-motion / stuttering
- *   output. By actually *playing* the source clip and pushing every frame
- *   onto the canvas via `requestVideoFrameCallback`, we feed the encoder at
- *   exactly the same cadence the user would see during normal playback.
+ *   regardless of how fast we feed it — seeking frame-by-frame produced
+ *   slow-motion / stuttering output. By actually *playing* the source clip
+ *   and pushing every frame onto the canvas via `requestVideoFrameCallback`,
+ *   we feed the encoder at exactly the same cadence the user would see
+ *   during normal playback.
+ *
+ * Hardening (vs. the previous version that hung / errored):
+ *   • Pre-flight MediaRecorder mime check (don't construct with unsupported type)
+ *   • captureStream(fps) — guarantees a steady frame supply even when the
+ *     canvas isn't being repainted (e.g. during seek) so MediaRecorder
+ *     doesn't stall waiting for data
+ *   • A driver rAF loop runs continuously and keeps re-painting the canvas
+ *     with the latest decoded video frame. This means we are no longer
+ *     dependent on requestVideoFrameCallback firing for the encoder to get
+ *     fresh frames — RVFC remains an *optimisation* for end-detection
+ *   • `recorder.start()` (no timeslice) — emit one big chunk on stop, which
+ *     avoids race conditions where an empty timeslice arrives before any
+ *     frames are produced
+ *   • All async waits have explicit timeouts, so the export can never hang
+ *     indefinitely; it will always either finish, or throw
+ *   • Cancel cooperation — checking `cancelRef.current` everywhere a long
+ *     wait could happen
  *
  * Limitations:
  *   • Video-only (no audio) — graceful audio routing across clip boundaries
@@ -29,7 +46,7 @@ export interface WebMClipDef {
 export interface WebMExportOptions {
   width: number;
   height?: number;
-  fps?: number;            // requested capture fps (advisory; real fps follows source)
+  fps?: number;            // capture fps for the canvas stream
   bitsPerSecond?: number;
   onProgress?: (pct: number) => void;
   cancelRef?: { current: boolean };
@@ -37,35 +54,67 @@ export interface WebMExportOptions {
 
 const DEFAULT_BITRATE = 5_000_000;
 
-function pickMimeType(): string {
+function pickMimeType(): string | null {
+  if (typeof MediaRecorder === 'undefined') return null;
   const candidates = [
     'video/webm;codecs=vp9',
     'video/webm;codecs=vp8',
     'video/webm',
   ];
   for (const m of candidates) {
-    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) return m;
+    try {
+      if (MediaRecorder.isTypeSupported(m)) return m;
+    } catch { /* ignore */ }
   }
-  return 'video/webm';
+  return null;
 }
 
-function loadHiddenVideo(url: string): Promise<HTMLVideoElement> {
+function loadHiddenVideo(url: string, timeoutMs = 15000): Promise<HTMLVideoElement> {
   return new Promise((resolve, reject) => {
     const v = document.createElement('video');
     v.muted = true;
     v.playsInline = true;
     v.preload = 'auto';
-    v.style.display = 'none';
+    v.crossOrigin = 'anonymous';
+    v.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
     document.body.appendChild(v);
-    v.onloadedmetadata = () => resolve(v);
-    v.onerror = () => { v.remove(); reject(new Error(`Failed to load ${url}`)); };
+
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      try { v.remove(); } catch { /* ignore */ }
+      reject(new Error(`Timeout loading ${url}`));
+    }, timeoutMs);
+
+    const onMeta = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      v.removeEventListener('loadedmetadata', onMeta);
+      v.removeEventListener('error', onErr);
+      resolve(v);
+    };
+    const onErr = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      v.removeEventListener('loadedmetadata', onMeta);
+      v.removeEventListener('error', onErr);
+      try { v.remove(); } catch { /* ignore */ }
+      reject(new Error(`Failed to load ${url}`));
+    };
+
+    v.addEventListener('loadedmetadata', onMeta);
+    v.addEventListener('error', onErr);
     v.src = url;
-    v.load();
+    try { v.load(); } catch { /* ignore */ }
   });
 }
 
 function disposeHiddenVideo(v: HTMLVideoElement) {
-  try { v.pause(); v.removeAttribute('src'); v.load(); } catch { /* ignore */ }
+  try { v.pause(); } catch { /* ignore */ }
+  try { v.removeAttribute('src'); v.load(); } catch { /* ignore */ }
   if (v.parentNode) v.parentNode.removeChild(v);
 }
 
@@ -88,12 +137,56 @@ type RVFCVideo = HTMLVideoElement & {
   cancelVideoFrameCallback?: (id: number) => void;
 };
 
+// Wait for either an event, a predicate-true tick, or a timeout. Always resolves.
+function waitForReady(v: HTMLVideoElement, timeoutMs: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (v.readyState >= 2) { resolve(); return; }
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      v.removeEventListener('canplay', finish);
+      v.removeEventListener('loadeddata', finish);
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    v.addEventListener('canplay', finish, { once: true });
+    v.addEventListener('loadeddata', finish, { once: true });
+  });
+}
+
+function seekTo(v: HTMLVideoElement, t: number, timeoutMs = 5000): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (Math.abs(v.currentTime - t) < 0.05) { resolve(); return; }
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      v.removeEventListener('seeked', finish);
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    v.addEventListener('seeked', finish, { once: true });
+    try {
+      v.currentTime = t;
+    } catch {
+      finish();
+    }
+  });
+}
+
 export async function exportClipsToWebM(
   clips: WebMClipDef[],
   options: WebMExportOptions,
 ): Promise<Blob> {
   if (!clips.length) throw new Error('No clips to export');
-  if (typeof MediaRecorder === 'undefined') throw new Error('MediaRecorder not supported');
+
+  const mime = pickMimeType();
+  if (!mime) {
+    throw new Error('WebM recording is not supported in this browser. Try Chrome or Edge.');
+  }
 
   const {
     width,
@@ -103,176 +196,239 @@ export async function exportClipsToWebM(
     cancelRef,
   } = options;
 
-  // ── Set up canvas + stream + recorder ──────────────────────────────────
+  // ── Set up canvas (height resolved after first clip metadata) ─────────
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  // Height resolved after first clip metadata
-  const ctx = canvas.getContext('2d', { alpha: false })!;
-  if (!ctx) throw new Error('No 2D context');
+  canvas.width = Math.max(2, Math.round(width));
+  canvas.height = 2; // placeholder; real height set below
+  const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) throw new Error('Could not get 2D canvas context');
 
-  // ── Pre-load all clips ─────────────────────────────────────────────────
-  type Loaded = WebMClipDef & { video: HTMLVideoElement; duration: number; end: number };
+  // ── Pre-load all clips ────────────────────────────────────────────────
+  type Loaded = WebMClipDef & { video: HTMLVideoElement; duration: number; start: number; end: number };
   const loaded: Loaded[] = [];
-  for (const clip of clips) {
-    const v = await loadHiddenVideo(clip.url);
-    const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
-    const end = Math.min(clip.endTime > 0 ? clip.endTime : dur, dur);
-    loaded.push({ ...clip, video: v, duration: dur, end });
+  try {
+    for (const clip of clips) {
+      if (cancelRef?.current) throw new Error('Export cancelled');
+      const v = await loadHiddenVideo(clip.url);
+      const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+      const start = Math.max(0, Math.min(clip.startTime || 0, dur));
+      const rawEnd = clip.endTime > 0 ? clip.endTime : dur;
+      const end = Math.max(start + 0.1, Math.min(rawEnd, dur || rawEnd));
+      loaded.push({ ...clip, video: v, duration: dur, start, end });
+    }
+  } catch (e) {
+    loaded.forEach(l => disposeHiddenVideo(l.video));
+    throw e;
   }
 
   // Pick output height from first clip (or option override)
-  const firstAspect = loaded[0].video.videoHeight / Math.max(1, loaded[0].video.videoWidth);
-  const height = options.height ?? Math.max(1, Math.round(width * (firstAspect || 9 / 16)));
-  canvas.height = height;
+  const firstW = Math.max(1, loaded[0].video.videoWidth);
+  const firstH = Math.max(1, loaded[0].video.videoHeight);
+  const height = options.height
+    ?? Math.max(2, Math.round((width * firstH) / firstW));
+  canvas.width = Math.max(2, Math.round(width));
+  canvas.height = Math.max(2, Math.round(height));
   ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // captureStream WITHOUT a fixed fps argument: the stream emits whenever the
-  // canvas is repainted, which gives us real-time pacing instead of fixed-rate
-  // sampling. This is the key difference vs. the previous broken version.
-  const stream = canvas.captureStream();
-  const mime = pickMimeType();
-  const recorder = new MediaRecorder(stream, {
-    mimeType: mime,
-    videoBitsPerSecond: bitsPerSecond,
-  });
+  // ── Set up MediaRecorder with a steady-rate canvas stream ─────────────
+  // captureStream(fps) guarantees the encoder gets frames at this cadence
+  // even during seek/decoding lulls; without it MediaRecorder can stall.
+  const stream = canvas.captureStream(fps);
+  let recorder: MediaRecorder;
+  try {
+    recorder = new MediaRecorder(stream, {
+      mimeType: mime,
+      videoBitsPerSecond: bitsPerSecond,
+    });
+  } catch (e) {
+    stream.getTracks().forEach(t => t.stop());
+    loaded.forEach(l => disposeHiddenVideo(l.video));
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`MediaRecorder init failed: ${msg}`, { cause: e });
+  }
 
   const chunks: Blob[] = [];
-  recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) chunks.push(ev.data); };
-  const stopped = new Promise<void>((resolve, reject) => {
+  let recorderError: Error | null = null;
+  recorder.ondataavailable = (ev) => {
+    if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+  };
+  recorder.onerror = (ev) => {
+    // ev.error is non-standard; fall back to a generic message
+    const errLike = ev as unknown as { error?: { message?: string } };
+    recorderError = new Error(errLike.error?.message || 'MediaRecorder error');
+  };
+  const stopped = new Promise<void>((resolve) => {
     recorder.onstop = () => resolve();
-    recorder.onerror = (e) => reject(e instanceof Event ? new Error('Recorder error') : e);
   });
-  recorder.start(500);
 
   // Total planned playback duration for progress
   const totalDuration = loaded.reduce(
-    (s, l) => s + Math.max(0, l.end - Math.max(0, l.startTime)),
+    (s, l) => s + Math.max(0, l.end - l.start),
     0,
   );
   let elapsed = 0;
 
-  // Helper: play one clip from start→end, drawing each decoded frame onto
-  // the canvas. Uses requestVideoFrameCallback when available (perfect frame
-  // pacing); falls back to rAF with a manual draw cadence.
+  // ── Start a continuous canvas-paint loop ──────────────────────────────
+  // This is what feeds MediaRecorder. It's independent from the per-clip
+  // playback loop, so the encoder always has fresh content even between
+  // clips (seeking, transitions, etc.). The loop reads `currentVideo`,
+  // which `playClip()` swaps in for each clip.
+  let currentVideo: HTMLVideoElement | null = null;
+  let currentFit: { dx: number; dy: number; dw: number; dh: number } = { dx: 0, dy: 0, dw: canvas.width, dh: canvas.height };
+  let stopPainter = false;
+
+  const paintLoop = () => {
+    if (stopPainter) return;
+    const v = currentVideo;
+    if (v && v.readyState >= 2 && v.videoWidth > 0) {
+      try {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(v, currentFit.dx, currentFit.dy, currentFit.dw, currentFit.dh);
+      } catch { /* video not ready for draw */ }
+    }
+    requestAnimationFrame(paintLoop);
+  };
+  requestAnimationFrame(paintLoop);
+
+  // Helper: play one clip from start→end. Resolves when the clip's `end`
+  // is reached, when the video naturally ends, or when a watchdog fires.
   function playClip(l: Loaded): Promise<void> {
     return new Promise<void>((resolve) => {
       const v = l.video as RVFCVideo;
-      const fit = fitRect(v.videoWidth, v.videoHeight, width, height);
-      const startSec = Math.max(0, l.startTime);
+      currentFit = fitRect(v.videoWidth, v.videoHeight, canvas.width, canvas.height);
+      currentVideo = v;
+      const startSec = l.start;
       const endSec = l.end;
-      let rafId: number | null = null;
+      const baseElapsed = elapsed;
+      const clipDur = Math.max(0.05, endSec - startSec);
+
+      let finished = false;
       let rvfcId: number | null = null;
-      let stopped = false;
+      let progressTimer: ReturnType<typeof setInterval> | null = null;
       let hardTimeout: ReturnType<typeof setTimeout> | null = null;
-      const baseElapsed = elapsed; // capture before play so progress is monotonic
 
       const cleanup = () => {
-        stopped = true;
-        if (rafId !== null) cancelAnimationFrame(rafId);
-        if (rvfcId !== null && v.cancelVideoFrameCallback) v.cancelVideoFrameCallback(rvfcId);
+        if (rvfcId !== null && v.cancelVideoFrameCallback) {
+          try { v.cancelVideoFrameCallback(rvfcId); } catch { /* ignore */ }
+          rvfcId = null;
+        }
+        if (progressTimer !== null) { clearInterval(progressTimer); progressTimer = null; }
         if (hardTimeout !== null) { clearTimeout(hardTimeout); hardTimeout = null; }
         v.onended = null;
-        v.removeEventListener('timeupdate', onTimeCheck);
-        v.pause();
+        v.onpause = null;
+        try { v.pause(); } catch { /* ignore */ }
       };
 
       const finish = () => {
-        if (stopped) return;
+        if (finished) return;
+        finished = true;
         cleanup();
-        elapsed = baseElapsed + Math.max(0, endSec - startSec);
-        onProgress?.(Math.min(99, Math.round((elapsed / totalDuration) * 100)));
+        elapsed = baseElapsed + clipDur;
+        if (totalDuration > 0) {
+          onProgress?.(Math.min(99, Math.round((elapsed / totalDuration) * 100)));
+        }
         resolve();
       };
 
-      const drawFrame = () => {
-        if (stopped) return;
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, width, height);
-        try { ctx.drawImage(v, fit.dx, fit.dy, fit.dw, fit.dh); } catch { /* video not ready */ }
-      };
-
-      // Progress + end-of-trim watchdog (timeupdate fires ~4×/s)
-      const onTimeCheck = () => {
-        if (stopped) return;
+      // Progress + end-of-trim watchdog (independent of timeupdate which is
+      // throttled and unreliable across browsers)
+      progressTimer = setInterval(() => {
+        if (finished) return;
         if (cancelRef?.current) { finish(); return; }
-        if (v.currentTime >= endSec - 0.01) { finish(); return; }
-        const localProgress = v.currentTime - startSec;
-        const totalProgress = baseElapsed + Math.max(0, localProgress);
-        onProgress?.(Math.min(99, Math.round((totalProgress / totalDuration) * 100)));
-      };
+        if (v.ended) { finish(); return; }
+        if (v.currentTime >= endSec - 0.02) { finish(); return; }
+        const local = Math.max(0, v.currentTime - startSec);
+        if (totalDuration > 0) {
+          const totalProg = baseElapsed + Math.min(local, clipDur);
+          onProgress?.(Math.min(99, Math.round((totalProg / totalDuration) * 100)));
+        }
+      }, 200);
 
-      // Frame pump
+      // RVFC hook (if available) gives us the most precise end-of-frame moment
       if (typeof v.requestVideoFrameCallback === 'function') {
         const onVideoFrame = () => {
-          if (stopped) return;
-          drawFrame();
-          if (v.currentTime >= endSec - 0.01) { finish(); return; }
+          if (finished) return;
+          if (v.currentTime >= endSec - 0.02) { finish(); return; }
           rvfcId = v.requestVideoFrameCallback!(onVideoFrame);
         };
         rvfcId = v.requestVideoFrameCallback(onVideoFrame);
-      } else {
-        // Fallback: rAF draws ~display fps; encoder picks up via captureStream
-        const interval = 1000 / fps;
-        let lastDraw = 0;
-        const tick = (now: number) => {
-          if (stopped) return;
-          if (now - lastDraw >= interval) {
-            drawFrame();
-            lastDraw = now;
-          }
-          if (v.currentTime >= endSec - 0.01) { finish(); return; }
-          rafId = requestAnimationFrame(tick);
-        };
-        rafId = requestAnimationFrame(tick);
       }
 
-      v.addEventListener('timeupdate', onTimeCheck);
       v.onended = () => finish();
 
-      // Hard timeout: if for some reason play never completes, cap at 1.5x duration.
-      // Cleared by `cleanup()` so it doesn't fire after a normal `finish()` either.
-      hardTimeout = setTimeout(finish, Math.max(5000, (endSec - startSec) * 1500));
+      // Hard timeout: cap at max(8s, 2× the clip's own real duration). If
+      // playback genuinely takes longer than that, the file is broken or
+      // playback stalled — better to bail than hang.
+      hardTimeout = setTimeout(finish, Math.max(8000, clipDur * 2000));
 
-      // Seek to clip start, then play
-      const seekStart = () => {
-        const startPlay = () => {
-          v.play().catch(() => finish());
-        };
-        if (Math.abs(v.currentTime - startSec) < 0.05) {
-          startPlay();
-        } else {
-          const onSeeked = () => {
-            v.removeEventListener('seeked', onSeeked);
-            startPlay();
-          };
-          v.addEventListener('seeked', onSeeked);
-          v.currentTime = startSec;
+      // Begin: ensure decoded data, seek to start, then play
+      (async () => {
+        try {
+          await waitForReady(v, 8000);
+          if (finished || cancelRef?.current) { finish(); return; }
+          await seekTo(v, startSec, 5000);
+          if (finished || cancelRef?.current) { finish(); return; }
+          try {
+            await v.play();
+          } catch (err) {
+            // play() rejected (autoplay policy, decode error, etc.) — bail
+            console.warn('[webmExport] play() rejected', err);
+            finish();
+          }
+        } catch {
+          finish();
         }
-      };
-      // Ensure we have decoded data
-      if (v.readyState >= 2) seekStart();
-      else v.addEventListener('canplay', seekStart, { once: true });
+      })();
     });
   }
 
+  // ── Run the recording ─────────────────────────────────────────────────
+  let exportError: Error | null = null;
   try {
+    recorder.start(); // single chunk on stop — avoids empty-timeslice races
+
     for (const l of loaded) {
       if (cancelRef?.current) break;
+      if (recorderError) { exportError = recorderError; break; }
       await playClip(l);
     }
-    recorder.stop();
-    await stopped;
+
+    // Give the encoder a tiny moment to flush the last frames
+    await new Promise(r => setTimeout(r, 150));
+
+    if (recorder.state !== 'inactive') {
+      try { recorder.stop(); } catch { /* ignore */ }
+    }
+    await Promise.race([
+      stopped,
+      new Promise<void>(r => setTimeout(r, 5000)), // never wait forever
+    ]);
+
+    if (recorderError && !exportError) exportError = recorderError;
+
+    if (exportError) throw exportError;
+    if (cancelRef?.current) throw new Error('Export cancelled');
+
     onProgress?.(100);
+
+    if (chunks.length === 0) {
+      throw new Error('No data captured — export produced an empty file.');
+    }
+
     const raw = new Blob(chunks, { type: mime });
-    // MediaRecorder writes a WebM without a Segment > Info > Duration field,
-    // so players show "Infinity:NaN:NaN" and seeking is broken. We patch the
-    // header in-place to inject the real duration in milliseconds.
+    // Patch missing Duration header so players can seek and show length
     const fixed = await fixWebMDuration(raw, totalDuration * 1000);
     return fixed;
   } finally {
+    stopPainter = true;
+    currentVideo = null;
+    try {
+      if (recorder.state !== 'inactive') recorder.stop();
+    } catch { /* ignore */ }
     loaded.forEach(l => disposeHiddenVideo(l.video));
-    stream.getTracks().forEach(t => t.stop());
+    stream.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
   }
 }
 

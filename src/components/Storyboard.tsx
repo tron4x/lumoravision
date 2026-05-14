@@ -33,9 +33,15 @@ export function Storyboard({ video, onClose, onSeekTo }: StoryboardProps) {
   const generationIdRef = useRef(0);
   useEffect(() => {
     mountedRef.current = true;
+    // Capture the ref object itself in the effect's closure (not its
+    // `.current` value) so the cleanup uses the same object instance even if
+    // a future React feature swapped refs across renders. This silences the
+    // react-hooks/exhaustive-deps warning while keeping the same behaviour:
+    // bumping the id invalidates any in-flight generateStoryboard() loop.
+    const idRef = generationIdRef;
     return () => {
       mountedRef.current = false;
-      generationIdRef.current++; // invalidate any in-flight generation
+      idRef.current += 1; // invalidate any in-flight generation
     };
   }, []);
 

@@ -272,30 +272,86 @@ export function useFileSystem(): UseFileSystemReturn {
     }
   }, [folders]);
 
-  // Rescan an existing folder by id – re-reads files from the stored handle
+  // Rescan an existing folder by id – re-reads files from the stored handle.
+  // After a page reload the stored handle may have lost its read permission
+  // (Brave/Chrome can revoke it across navigations); we explicitly request
+  // it again here so the rescan button "just works" even mid-session.
   const rescanFolder = useCallback(async (id: string) => {
     if (!supportsFileSystemAPI) return;
+
+    // Look up the saved handle. We try by ID first (canonical), but fall
+    // back to matching by name — this rescues folders that were loaded via
+    // the fallback FileList API (Brave/Firefox/Safari) and don't have a
+    // handle stored at the same ID, but DO have one from an earlier
+    // showDirectoryPicker session.
     const saved = await loadFolderHandles();
-    const entry = saved.find(s => s.id === id);
-    if (!entry?.handle) return;
+    const target = folders.find(f => f.id === id);
+    let entry = saved.find(s => s.id === id);
+    if (!entry && target) {
+      entry = saved.find(s => s.name === target.name);
+    }
+    if (!entry?.handle) {
+      // Nothing in IndexedDB for this folder — the user must pick it again
+      // through the native picker. Mark the folder as needing a reopen so
+      // the sidebar surfaces the amber "click to reopen" affordance, then
+      // surface a clearer message than the cryptic "no saved handle".
+      setError(target
+        ? `Lumoravision doesn't have a re-scannable handle for "${target.name}" yet. Click "Add Folder" and pick the same folder once — that grants the permanent permission needed for one-click rescans.`
+        : 'No saved handle for this folder — please reopen it.');
+      setFolders(prev => prev.map(f => f.id === id ? { ...f, needsReopen: true } : f));
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
     try {
-      // Revoke old object URLs to avoid memory leaks
+      // ── 1. Re-acquire read permission if the browser dropped it ──────
+      // queryPermission tells us the current state without prompting;
+      // requestPermission will prompt if needed. We MUST be in a user
+      // gesture (which we are — this runs from a click handler) for the
+      // prompt to actually appear; otherwise it'll just resolve with
+      // "prompt" or "denied" without UI.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const h = entry.handle as any;
+      if (typeof h.queryPermission === 'function') {
+        let perm: PermissionState = await h.queryPermission({ mode: 'read' });
+        if (perm !== 'granted' && typeof h.requestPermission === 'function') {
+          perm = await h.requestPermission({ mode: 'read' });
+        }
+        if (perm !== 'granted') {
+          setError('Permission to re-read the folder was denied.');
+          // Mark the folder as needing a reopen so the sidebar shows the
+          // amber "click to reopen" state instead of leaving the user
+          // wondering why nothing happened.
+          setFolders(prev => prev.map(f => f.id === id ? { ...f, needsReopen: true } : f));
+          return;
+        }
+      }
+
+      // ── 2. Revoke old object URLs to avoid memory leaks ──────────────
       const oldUrls = urlsRef.current.get(id) ?? [];
       oldUrls.forEach(url => URL.revokeObjectURL(url));
 
+      // ── 3. Re-read the folder contents ──────────────────────────────
       const { videos, images } = await readFilesFromHandle(entry.handle, id, urlsRef.current);
-      setFolders(prev => prev.map(f => f.id === id ? { ...f, videos, images, needsReopen: false } : f));
+
+      // ── 4. Commit the refreshed lists; clear any stale needsReopen ──
+      setFolders(prev => prev.map(f =>
+        f.id === id ? { ...f, videos, images, needsReopen: false } : f
+      ));
       setError(null);
     } catch (err) {
       console.error('rescanFolder error:', err);
-      setError('Could not rescan folder.');
+      // Most failures here are permission revocation after the prompt was
+      // dismissed, or the folder being deleted/renamed on disk.
+      setError(err instanceof Error
+        ? `Could not rescan folder: ${err.message}`
+        : 'Could not rescan folder.');
+      setFolders(prev => prev.map(f => f.id === id ? { ...f, needsReopen: true } : f));
     } finally {
       setIsLoading(false);
     }
-  }, [supportsFileSystemAPI]);
+  }, [supportsFileSystemAPI, folders]);
 
   // Modern File System Access API (Chrome, Edge)
   const addFolder = useCallback(async () => {

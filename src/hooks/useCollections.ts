@@ -12,8 +12,13 @@ import { useState, useCallback, useEffect } from 'react';
 
 // ── IndexedDB helpers ─────────────────────────────────────────────────────────
 
+// IMPORTANT: this DB is shared with `usePersistedFolders.ts`. Both must
+// agree on the version number — see the comment in that file. The upgrade
+// handler creates BOTH stores (this module's "collections" + the other's
+// "folder-handles") so the DB ends up in the same state regardless of
+// which hook initialises it first.
 const DB_NAME = 'videoplayer-db';
-const DB_VERSION = 2; // bump from 1 → 2 to add the new store
+const DB_VERSION = 2;
 const STORE_NAME = 'collections';
 
 function openCollectionsDB(): Promise<IDBDatabase> {
@@ -21,9 +26,12 @@ function openCollectionsDB(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const db = (e.target as IDBOpenDBRequest).result;
-      // Keep existing stores intact, only add ours if missing
+      // Idempotent: only create stores that don't already exist
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('folder-handles')) {
+        db.createObjectStore('folder-handles', { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
