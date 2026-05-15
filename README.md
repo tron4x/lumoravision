@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/TypeScript-6-3178C6?style=for-the-badge&logo=typescript&logoColor=white" />
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" />
   <img src="https://img.shields.io/badge/Vite-8-646CFF?style=for-the-badge&logo=vite&logoColor=white" />
-  <img src="https://img.shields.io/badge/License-Apache_2.0-green?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/License-CC_BY--NC_4.0-EF9421?style=for-the-badge&logo=creativecommons&logoColor=white" />
 </p>
 
 <p align="center">
@@ -98,9 +98,18 @@ If you need longer/heavier exports, use the browser export as a preview step and
 
 Lumoravision intentionally ships without backend uploads, accounts, analytics or cloud processing. This reduces abuse risk and keeps private media private. If a future deployment adds a backend, it must add proper authentication, rate limits, upload quotas, server-side file validation and abuse reporting.
 
-### License / branding note
+### License / branding / no commercial use
 
-Lumoravision is currently licensed under **Apache License 2.0**. That is an open-source license: others may use, modify and redistribute the code under its terms. The license does **not** grant trademark rights to the project name, logos, or branding beyond what the license permits. If you want the project to be closed-source or commercially restricted, replace `LICENSE` with an appropriate proprietary license before publishing.
+> [!IMPORTANT]
+> **Commercial use of Lumoravision is not allowed.**
+>
+> Lumoravision is licensed under **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** — see [`LICENSE`](./LICENSE).
+>
+> You may use, study, modify and share Lumoravision for **personal, private and non-commercial purposes only**, with appropriate attribution to the author. You may **not** sell it, sublicense it, host it as a paid service, bundle it into a paid product, run paid ads against it, or otherwise monetise it or any derivative without prior written permission from the author.
+>
+> The project name (**Lumoravision**), the logo, screenshots and other branding are **not** licensed for commercial use either. Trademarks are reserved.
+>
+> For a commercial licence, contact the author: <https://github.com/tron4x>.
 
 ---
 
@@ -530,7 +539,16 @@ It helps others find the project and motivates further development.
 
 ## 📄 License
 
-Apache License 2.0 — see [LICENSE](./LICENSE) for details.
+**Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** — see [`LICENSE`](./LICENSE) for the full legal text, or <https://creativecommons.org/licenses/by-nc/4.0/> for a human-readable summary.
+
+In short:
+
+- ✅ You may use, study, modify and redistribute Lumoravision for **personal, educational and non-commercial** purposes.
+- ✅ You must give appropriate **attribution** to the author (tron4x) and link back to this repository.
+- ❌ You may **not** use Lumoravision or any derivative for any **commercial** purpose without a separate written licence from the author.
+- ❌ The project **name, logo and branding** are not part of the CC licence and may not be used for commercial purposes.
+
+For a commercial licence, contact the author at <https://github.com/tron4x>.
 
 ---
 

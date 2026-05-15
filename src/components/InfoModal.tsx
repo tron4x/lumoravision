@@ -63,6 +63,22 @@ export function InfoModal({ onClose }: InfoModalProps) {
                 30 minutes, and graded video export records in real time.
               </p>
             </div>
+            <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 px-3 py-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-orange-400 mb-1">License — Non-commercial</div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Lumoravision is licensed under{' '}
+                <a
+                  href="https://creativecommons.org/licenses/by-nc/4.0/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-orange-300 hover:text-orange-200 underline"
+                >
+                  CC BY-NC 4.0
+                </a>
+                . Free for personal and non-commercial use with attribution. Commercial use requires a separate written
+                licence from the author.
+              </p>
+            </div>
           </div>
 
           <div className="flex flex-col items-center gap-1.5 mt-1">
