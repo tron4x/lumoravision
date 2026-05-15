@@ -337,7 +337,7 @@ You have **3 tries**. After the third wrong attempt the screen turns into the pe
 </details>
 
 <details>
-<summary>🚨 Locked out? Recover from "ACCESS DENIED"</summary>
+<summary>🚨 Locked out ? Recover from "ACCESS DENIED"</summary>
 
 After 3 wrong tries the lock becomes permanent and **the lock-screen input is gone** — you have to clear the persisted state in the browser. Pick whichever path is easiest for you:
 
