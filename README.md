@@ -316,8 +316,28 @@ The Editor is a **browser-based non-linear clip sequencer**. No Premiere. No DaV
 
 ### 🔐 Lock Screen + Easter Egg
 
-- Type `lockme` anywhere in the app to put it behind a **Lock Screen**. The lock survives reloads via `localStorage` and unlocks with the same password you set on the lock screen.
-- Type `tron4x` for an animated developer-credit Easter Egg (logo float, starfield, scrolling credits, particle burst on close). Honours `prefers-reduced-motion`.
+Both are activated by a hidden keyboard trigger — just **type the secret word anywhere in the app** while no input is focused. The trigger is shown below as an emoji puzzle so it's not spoiled at first glance.
+
+**🔒 Lock Screen** — turns the whole app into a locked screen that survives a page reload (state is kept in `localStorage`). On first lock you set a password; same password unlocks it again.
+
+<details>
+<summary>🤐 Show the Lock Screen trigger word</summary>
+
+Type these letters in order (no spaces, no Enter): 🔐 + 🆗 + 👨 + 🇪 = **`lockme`**
+
+</details>
+
+**✨ Easter Egg** — a developer-credit overlay (floating logo, starfield, auto-scrolling credits, particle burst when it closes). Honours `prefers-reduced-motion`.
+
+<details>
+<summary>🤐 Show the Easter Egg trigger word</summary>
+
+Type these letters in order (no spaces, no Enter): 🚂 + 🅾️ + 🇳 + 4️⃣ + ❎ = **`tron4x`**
+
+</details>
+
+> [!TIP]
+> The triggers are case-insensitive and only fire when **no text input or text-area is focused**, so accidental activations while typing into the search bar or a label are not possible.
 
 ---
 
@@ -361,8 +381,8 @@ Press `?` anywhere to open the shortcuts overlay.
 | Key | Action |
 |:---|:---|
 | `?` | Toggle keyboard shortcuts overlay |
-| `lockme` | Activate the persistent Lock Screen |
-| `tron4x` | Open the developer-credit Easter Egg |
+| 🤐 *(secret)* | Activate the persistent Lock Screen — see the [Lock Screen + Easter Egg](#-lock-screen--easter-egg) section |
+| 🤐 *(secret)* | Open the developer-credit Easter Egg — see the [Lock Screen + Easter Egg](#-lock-screen--easter-egg) section |
 
 ---
 
