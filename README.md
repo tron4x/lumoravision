@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Your local media library — reimagined. No cloud. No upload. No bullshit.</strong><br/>
-  Drop a folder. Watch. Edit. Export GIFs. All in the browser.
+  Drop a folder. Watch. Cut. Color-grade. Export GIFs and WebM. All in the browser.
 </p>
 
 <p align="center">
@@ -112,9 +112,13 @@ Lumoravision is a **browser-based media player and editor** that runs entirely o
 
 - 🎬 **A beautiful video grid** with hover previews and auto-generated thumbnails
 - ✂️ **A full clip editor** with transitions, frame-accurate trimming and GIF export
+- 🎞️ **WebM export** of any timeline — render the cut to a real video file in your browser
+- 🎨 **LUT-based color grading** with presets and custom `.cube` files; export the graded result as WebM
+- ✨ **Auto-Highlights** — generate a short best-of reel from any video using motion + audio analysis
 - 🔍 **Auto scene detection** — chapters generated from pixel analysis, no AI API needed
 - 📸 **Storyboard view** — extract up to 100 frames from any video in seconds
 - ⬛⬛ **Splitscreen comparison** — two videos side by side, synced or independent
+- 🗂️ **Collections** — group videos and images across folders with colored labels (persisted in IndexedDB)
 - 🎵 **Playlist mode** — queue videos and binge without touching the keyboard
 - 🖼️ **Image Slideshow** — fullscreen slideshow with fade/slide/zoom transitions and auto-play
 
@@ -163,11 +167,42 @@ docker compose up -d --build
 - **Playback speed**: 0.25× · 0.5× · 0.75× · 1× · 1.25× · 1.5× · 1.75× · 2×
 - **Loop mode** with on-screen indicator
 - **Auto chapter detection** — scene analysis runs in the browser using Canvas pixel-diff; generates up to 20 chapters snapped to real scene cuts, shown as a scrollable thumbnail strip
+- **Smart-Scrub hover preview** — hover the progress bar to see a thumbnail of that exact second; previously-hovered frames are cached and reappear instantly
 - **Frame-accurate navigation** — step one frame forward/backward with `,` / `.`
+- **Resume playback position** — videos remember where you left off
 - **Screenshot mode** — frame slider, quick-jump buttons (±1 s, ±10 s, ±60 s), save as PNG
-- **GIF export** — set start/end time, FPS and width; exported entirely in the browser via gif.js Web Worker
+- **GIF export** — set start/end time, FPS and width; exported entirely in the browser via gif.js Web Worker. Includes a "Frames" filmstrip and a "Scenes" picker that runs scene detection so you can lock the GIF range to a clean cut.
 - Controls auto-hide after 3 s during playback
 - Native fullscreen + maximize mode
+
+---
+
+### 🎨 Color Grading — LUT Shader + WebM Export
+
+The `ColorGradePanel` adds professional-style colour grading on top of the playing video, entirely in WebGL.
+
+- **Built-in presets** — Teal & Orange, Bleach Bypass, Vintage Film, High Contrast, Cool/Warm and more
+- **Custom LUT support** — drag-and-drop any `.cube` file (parsed by `lutLoader.ts`)
+- **Live trilinear lookup** in a fragment shader — runs at native frame rate, capped to 1280 px max edge to keep mobile GPUs happy
+- **Intensity slider** for partial-strength looks
+- **Compare mode** — split-view slider with the original on one side and the graded result on the other
+- **Apply** to lock the active look (panel turns into a small floating badge so the grade survives even after closing the panel)
+- **Export graded video as WebM** — `MediaRecorder` records the WebGL canvas plus the source audio in real time; downloads as `graded-<look>-<timestamp>.webm`
+- WebGL resources are explicitly released on unmount (programs, textures, buffers, context-loss extension)
+
+---
+
+### ✨ Auto-Highlights — Best-of Reel Generator
+
+The `HighlightsModal` analyses a single video and returns the most interesting moments as a short reel.
+
+- **Motion analysis** via a dedicated Web Worker (`frameDiff.worker.ts`) — frame-to-frame difference scoring
+- **Audio energy analysis** — RMS / peak detection over the audio track
+- **Configurable** target reel length, clip length and motion-vs-audio weight
+- **Heat-map preview** of the per-second interest score, with the picked highlight ranges overlaid
+- **Cancellable** progress with a `cancelRef`-driven loop and a re-probe step for stubborn metadata
+- **Hard input cap of 30 minutes** to prevent OOM during audio decode (documented in the panel + the Privacy section above)
+- Picked ranges can be added straight to the Editor timeline
 
 ---
 
@@ -194,7 +229,7 @@ The Editor is a **browser-based non-linear clip sequencer**. No Premiere. No DaV
 | ⚡ Flash | White flash cut |
 
 **Frame-Accurate Trim Panel**
-- **Frame Scrubber** — a canvas preview that shows the exact frame at any position; step frame-by-frame (1/30 s) or jump ±1 s
+- **Frame Scrubber** — shared `FrameScrubber` component (also used by the Player's GIF panel) — canvas preview shows the exact frame at any position; step frame-by-frame (1/30 s) or jump ±1 s
 - **Set IN / Set OUT** buttons — lock your cut points to the exact frame you see
 - **IN / OUT sliders** for quick rough trimming
 - **Auto Scene Detection** — click "Scenes" to run pixel-diff analysis on the clip; detected scenes appear as clickable thumbnails to set IN/OUT instantly
@@ -210,6 +245,23 @@ The Editor is a **browser-based non-linear clip sequencer**. No Premiere. No DaV
 - **Cancel** at any time
 - Downloaded automatically as `editor-export-[timestamp].gif`
 - 100% browser-side via gif.js Web Workers — no server, no upload
+
+**WebM Export**
+- Render the entire timeline (clips + trim points + transitions) to a real `.webm` video
+- Real-time pipeline: each clip is *played*, the canvas compositor is captured via `captureStream(fps)` and recorded with `MediaRecorder` (`webmExport.ts`)
+- Auto codec selection (VP9 → VP8) with a `MediaRecorder.isTypeSupported` pre-flight
+- Patches the missing `Duration` header in the resulting WebM so players can seek the result
+- Cancellable with bounded async timeouts; full cleanup of paint loop, recorder, stream tracks and hidden `<video>` elements
+
+---
+
+### 🗂️ Collections
+
+- Create labelled, color-coded **collections** that span across all open folders
+- Toggle videos and images into a collection from the card menu
+- The sidebar shows your collections with their member count
+- Persisted in **IndexedDB** so they survive reloads (no cloud)
+- A dedicated `CollectionModal` lets you rename, recolor, add/remove members and delete collections
 
 ---
 
@@ -253,6 +305,13 @@ The Editor is a **browser-based non-linear clip sequencer**. No Premiere. No DaV
 
 ---
 
+### 🔐 Lock Screen + Easter Egg
+
+- Type `lockme` anywhere in the app to put it behind a **Lock Screen**. The lock survives reloads via `localStorage` and unlocks with the same password you set on the lock screen.
+- Type `tron4x` for an animated developer-credit Easter Egg (logo float, starfield, scrolling credits, particle burst on close). Honours `prefers-reduced-motion`.
+
+---
+
 ## ⌨️ Keyboard Shortcuts
 
 Press `?` anywhere to open the shortcuts overlay.
@@ -293,6 +352,8 @@ Press `?` anywhere to open the shortcuts overlay.
 | Key | Action |
 |:---|:---|
 | `?` | Toggle keyboard shortcuts overlay |
+| `lockme` | Activate the persistent Lock Screen |
+| `tron4x` | Open the developer-credit Easter Egg |
 
 ---
 
@@ -342,6 +403,10 @@ The Docker/Nginx setup includes security headers for public deployments:
 
 No API keys or secrets are required for normal operation. Do not add secrets to the frontend; anything bundled into a browser app is public.
 
+### Performance & bundle size
+
+The app is **code-split with `React.lazy`** so the initial page load only ships the chrome (Sidebar, Toolbar, cards, splash). Heavy modals like the Editor, ColorGrade, Storyboard, Splitscreen, Slideshow, ImageViewer, HighlightsModal, FrameScrubber and the Easter Egg are loaded on demand. Vendor splits for `react` and `gifjs` are declared in `vite.config.ts`. Initial gzipped payload is around **78 kB**.
+
 ---
 
 ## 🛠️ Tech Stack
@@ -356,6 +421,9 @@ No API keys or secrets are required for normal operation. Do not add secrets to 
 | Thumbnails | HTML5 Canvas API (lazy, IntersectionObserver) |
 | Video | HTML5 Video API (native, zero memory leaks) |
 | GIF Export | gif.js (Web Worker, 100% browser-side) |
+| WebM Export | `MediaRecorder` + `canvas.captureStream` (real-time, browser-native) |
+| Color Grading | WebGL fragment shader + 2D-atlas LUT (parser for `.cube` files) |
+| Auto-Highlights | Web Worker frame diff + audio RMS analysis |
 | Scene Detection | Canvas pixel-diff analysis (no external library) |
 
 ---
@@ -368,29 +436,44 @@ src/
 │   ├── VideoCard.tsx          # Grid card with thumbnail + hover preview
 │   ├── VideoListRow.tsx       # List row with thumbnail + hover preview
 │   ├── VideoPlayer.tsx        # Full-screen video player
+│   ├── ColorGradePanel.tsx    # WebGL LUT colour grading + WebM export
+│   ├── HighlightsModal.tsx    # Auto-Highlights generator UI
+│   ├── FrameScrubber.tsx      # Reusable filmstrip + IN/OUT scrubber
 │   ├── ImageCard.tsx          # Image grid card
 │   ├── ImageViewer.tsx        # Full-screen image viewer
 │   ├── Slideshow.tsx          # Fullscreen image slideshow
 │   ├── Sidebar.tsx            # Folder navigation
+│   ├── CollectionModal.tsx    # Manage collections (rename, recolor, members)
 │   ├── Toolbar.tsx            # Search, sort, view toggle, Editor button
 │   ├── Storyboard.tsx         # Frame overview & export
 │   ├── SplitscreenPlayer.tsx  # Side-by-side video comparison
-│   ├── DirectorMode.tsx       # Editor: clip sequencer + GIF export
+│   ├── DirectorMode.tsx       # Editor: clip sequencer + GIF/WebM export
 │   ├── PlaylistItem.tsx       # Playlist panel item
 │   ├── SplashScreen.tsx       # Animated intro
 │   ├── ShortcutsModal.tsx     # Keyboard shortcuts overlay
+│   ├── LockScreen.tsx         # Persistent password lock (lockme)
+│   ├── EasterEgg.tsx          # Developer-credit overlay (tron4x)
 │   ├── ErrorBoundary.tsx      # React error boundary
 │   └── InfoModal.tsx          # About dialog
 ├── hooks/
 │   ├── useFileSystem.ts       # Folder reading + persistence
 │   ├── usePersistedFolders.ts # IndexedDB storage
+│   ├── useCollections.ts      # Collections state + IndexedDB persistence
 │   ├── usePlaybackPosition.ts # Resume playback position
 │   └── useSort.ts             # Sorting logic
 ├── utils/
 │   ├── format.ts              # File size, duration, date formatting
 │   ├── gifExport.ts           # GIF export via gif.js
+│   ├── webmExport.ts          # Editor timeline → WebM via MediaRecorder
+│   ├── lutLoader.ts           # .cube LUT parser + 2D atlas builder
+│   ├── lutPresets.ts          # Built-in colour-grading presets
+│   ├── highlightDetection.ts  # Audio + motion analysis for Auto-Highlights
+│   ├── scrubThumbs.ts         # Smart-Scrub hover-preview thumbnails
+│   ├── thumbCache.ts          # Bounded LRU thumbnail cache
 │   ├── thumbQueue.ts          # Thumbnail generation queue
 │   └── sceneDetection.ts      # Auto chapter / scene detection
+├── workers/
+│   └── frameDiff.worker.ts    # Web Worker for frame-difference scoring
 └── types/
     └── video.ts               # TypeScript types
 ```

@@ -25,7 +25,3 @@ dist-ssr
 
 public/*.gif
 public/t/*
-
-src/components/EasterEgg.tsx
-src/components/LockScreen.tsx
-src/components/CommercialModal.tsx
