@@ -323,7 +323,7 @@ Both are activated by a hidden keyboard trigger — just **type the secret word 
 <details>
 <summary>🤐 Show the Lock Screen trigger word</summary>
 
-Type these letters in order (no spaces, no Enter): 🔐 + 🆗 + 👨 + 🇪 = **`lockme`**
+Type these letters in order (no spaces, no Enter):  **`lockme`**
 
 </details>
 
@@ -332,7 +332,7 @@ Type these letters in order (no spaces, no Enter): 🔐 + 🆗 + 👨 + 🇪 = *
 <details>
 <summary>🤐 Show the Easter Egg trigger word</summary>
 
-Type these letters in order (no spaces, no Enter): 🚂 + 🅾️ + 🇳 + 4️⃣ + ❎ = **`tron4x`**
+Type these letters in order (no spaces, no Enter):  **`tron4x`**
 
 </details>
 
