@@ -96,24 +96,29 @@ export function LockScreen({ onUnlock }: LockScreenProps) {
 
   if (permanentlyLocked) {
     return (
-      <div 
+      <div
+        // Pure black background, the previous full-bleed cover image was
+        // visually overwhelming. We now render the logo at a fixed, small
+        // size centered on solid black with a soft red glow so the
+        // "Access Denied" message stays the focal point.
         className="fixed inset-0 z-[9999] flex items-center justify-center bg-black select-none"
         onContextMenu={(e) => e.preventDefault()}
       >
-        {/* Full screen stop image */}
-        <img
-          src="lumoravision.png"
-          alt="Access Denied"
-          className="absolute inset-0 w-full h-full object-cover"
-          draggable={false}
-        />
-        
-        {/* Overlay with text */}
-        <div className="relative flex flex-col items-center gap-6 text-center z-10">
-          <h1 className="text-5xl font-bold text-white tracking-tight drop-shadow-2xl">
+        <div className="relative flex flex-col items-center gap-6 text-center px-6">
+          {/* Smaller logo with red glow halo */}
+          <div className="relative">
+            <div className="absolute inset-0 bg-red-500/30 rounded-full blur-3xl scale-110" />
+            <img
+              src="/lumoravision.png"
+              alt="Lumoravision"
+              className="relative w-32 h-32 sm:w-40 sm:h-40 object-contain opacity-80"
+              draggable={false}
+            />
+          </div>
+          <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight drop-shadow-2xl">
             ACCESS DENIED
           </h1>
-          <p className="text-white/80 text-lg drop-shadow-lg">
+          <p className="text-white/70 text-base sm:text-lg drop-shadow-lg max-w-sm">
             Maximum authentication attempts exceeded
           </p>
           <div className="flex items-center gap-2 text-white">

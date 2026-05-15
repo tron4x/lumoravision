@@ -318,12 +318,56 @@ The Editor is a **browser-based non-linear clip sequencer**. No Premiere. No DaV
 
 Both are activated by a hidden keyboard trigger — just **type the secret word anywhere in the app** while no input is focused. The trigger is shown below as an emoji puzzle so it's not spoiled at first glance.
 
-**🔒 Lock Screen** — turns the whole app into a locked screen that survives a page reload (state is kept in `localStorage`). On first lock you set a password; same password unlocks it again.
+**🔒 Lock Screen** — turns the whole app into a locked screen that survives a page reload (state is kept in `localStorage`). After three wrong tries the lock becomes a permanent **Access Denied** screen (logo on a black background) which blocks all keyboard, context-menu and shortcut events until you wipe `localStorage`.
 
 <details>
-<summary>🤐 Show the Lock Screen trigger word</summary>
+<summary>🤐 Show the Lock Screen trigger word (to lock)</summary>
 
-Type these letters in order (no spaces, no Enter):  **`lockme`**
+Type these letters in order (no spaces, no Enter): 🔐 + 🆗 + 👨 + 🇪 = **`lockme`**
+
+</details>
+
+<details>
+<summary>🔓 Show the unlock code (to get back in)</summary>
+
+Type the access code into the lock-screen input field:  **`unlock`**
+
+You have **3 tries**. After the third wrong attempt the screen turns into the permanent "Access Denied" lockdown described above.
+
+</details>
+
+<details>
+<summary>🚨 Locked out? Recover from "ACCESS DENIED"</summary>
+
+After 3 wrong tries the lock becomes permanent and **the lock-screen input is gone** — you have to clear the persisted state in the browser. Pick whichever path is easiest for you:
+
+**Option A — Browser DevTools (recommended, no data loss)**
+
+1. Open DevTools (`F12` / `Cmd+Option+I` / `Ctrl+Shift+I`).
+   - In the locked tab the keyboard is blocked, so right-click is too — open DevTools from the **browser menu** instead (Chrome: ⋮ → More tools → Developer tools).
+2. Go to the **Application** tab → **Storage** → **Local Storage** → `http://localhost:5173` (or your deployed URL).
+3. Delete these two keys:
+   - `lumoravision_permanent_lock`
+   - `lumoravision_permanent_lock_attempts`
+4. Reload the tab. The lock is gone and your videos, folders and collections are still there.
+
+**Option B — DevTools Console one-liner**
+
+In the DevTools **Console** tab:
+
+```js
+localStorage.removeItem('lumoravision_permanent_lock');
+localStorage.removeItem('lumoravision_permanent_lock_attempts');
+location.reload();
+```
+
+**Option C — Clear site data (nuclear)**
+
+In DevTools → **Application** → **Storage** → click **Clear site data**.
+This wipes everything Lumoravision stored: collections, folder permissions and the lock. Folders need to be reopened, but no actual files are touched.
+
+> [!NOTE]
+> The lock is **per browser**, **per origin** and **per profile**. Opening the app in a different browser, an Incognito/Private window, or another browser profile is also a quick way to get back in without touching the locked tab's storage at all.
 
 </details>
 
