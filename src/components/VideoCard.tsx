@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, memo } from 'react';
 import type { VideoFile } from '../types/video';
 import { formatFileSize, formatDuration, formatDate } from '../utils/format';
 import { runThumbJob } from '../utils/thumbQueue';
@@ -86,7 +86,7 @@ function thumbnailCachePut(id: string, dataUrl: string) {
   thumbnailCache.set(id, dataUrl);
 }
 
-export function VideoCard({ video, onPlay, onDurationLoaded, onAddToPlaylist, inPlaylist, onStoryboard, onSplitscreen }: VideoCardProps) {
+export const VideoCard = memo(function VideoCard({ video, onPlay, onDurationLoaded, onAddToPlaylist, inPlaylist, onStoryboard, onSplitscreen }: VideoCardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isHovering, setIsHovering] = useState(false);
@@ -298,4 +298,4 @@ export function VideoCard({ video, onPlay, onDurationLoaded, onAddToPlaylist, in
       </div>
     </div>
   );
-}
+});

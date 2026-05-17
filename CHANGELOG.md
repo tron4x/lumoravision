@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.1] - 2026-05-17
+
+### Added
+- **Filmstrip Frame Navigation in VideoPlayer**:
+  - New "Frames" button in the title bar next to "Chapters"
+  - FrameScrubber panel with 16-frame filmstrip preview
+  - Draggable IN/OUT markers (green/red) for precise range selection
+  - Frame-by-frame navigation with ±1 frame and ±1s buttons
+  - Quick actions: Reset, Go to IN, Go to OUT
+  - Direct integration with GIF export and Screenshot features
+  - Amber-colored UI accent to distinguish from Chapters
+
+### Performance
+- **React.memo optimization for list components**:
+  - `VideoCard` wrapped in `memo()` — prevents unnecessary re-renders when scrolling through large video collections
+  - `ImageCard` wrapped in `memo()` — same optimization for image galleries
+  - `PlaylistItem` wrapped in `memo()` — playlist items no longer re-render on parent state changes
+  - Reduces React reconciliation work significantly for folders with 100+ items
+
+### Fixed
+- **WebM export stuttering/hanging** during playback:
+  - Increased default bitrate from 5 Mbps to 8 Mbps for better quality
+  - Added `recorder.start(1000)` timeslice to force keyframes every 1 second, preventing decoder stalls
+- **VideoPlayer muted by default** — video now starts with audio muted (user can unmute via M key or volume control)
+- **Filmstrip initialization** — uses ref-based tracking to avoid stale closure issues in onLoadedMetadata handler
+
+### Changed
+- Updated version to 1.2.1
+
+---
+
 ## [1.1.9] - 2026-05-14
 
 ### Added

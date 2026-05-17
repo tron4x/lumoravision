@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, memo } from 'react';
 import type { ImageFile } from '../types/video';
 import { formatFileSize, formatDate } from '../utils/format';
 
@@ -22,7 +22,7 @@ const extColors: Record<string, string> = {
   heif: 'bg-blue-500',
 };
 
-export function ImageCard({ image, onOpen }: ImageCardProps) {
+export const ImageCard = memo(function ImageCard({ image, onOpen }: ImageCardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [inViewport, setInViewport] = useState(false);
 
@@ -104,4 +104,4 @@ export function ImageCard({ image, onOpen }: ImageCardProps) {
       </div>
     </div>
   );
-}
+});

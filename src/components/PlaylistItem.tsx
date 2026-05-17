@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import type { VideoFile } from '../types/video';
 import { formatDuration } from '../utils/format';
 
@@ -71,7 +71,7 @@ interface PlaylistItemProps {
   onRemove: () => void;
 }
 
-export function PlaylistItem({ video, index, isActive, onPlay, onRemove }: PlaylistItemProps) {
+export const PlaylistItem = memo(function PlaylistItem({ video, index, isActive, onPlay, onRemove }: PlaylistItemProps) {
   const [thumbnail, setThumbnail] = useState<string | null>(thumbnailCache.get(video.id) ?? null);
   const [isLoading, setIsLoading] = useState(!thumbnailCache.has(video.id));
 
@@ -140,4 +140,4 @@ export function PlaylistItem({ video, index, isActive, onPlay, onRemove }: Playl
       </button>
     </div>
   );
-}
+});
