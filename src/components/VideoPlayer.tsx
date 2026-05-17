@@ -34,7 +34,7 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
   const [isLoop, setIsLoop] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
@@ -52,6 +52,12 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
   const [isMaximized, setIsMaximized] = useState(false);
   const [showScreenshotPanel, setShowScreenshotPanel] = useState(false);
   
+  // Filmstrip scrubber state (frame-by-frame navigation like in Editor)
+  const [showFilmstrip, setShowFilmstrip] = useState(false);
+  const [filmstripInT, setFilmstripInT] = useState(0);
+  const [filmstripOutT, setFilmstripOutT] = useState(0);
+  const filmstripInitRef = useRef(false);
+
   // GIF export state
   const [showGifPanel, setShowGifPanel] = useState(false);
   const [showColorGrade, setShowColorGrade] = useState(false);
@@ -385,6 +391,29 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
               </button>
             )}
 
+            {/* Frames - Show / Hide filmstrip scrubber */}
+            <button
+              onClick={() => { 
+                const newShowFilmstrip = !showFilmstrip;
+                setShowFilmstrip(newShowFilmstrip);
+                setShowScreenshotPanel(false);
+                setShowGifPanel(false);
+                if (isPlaying) { videoRef.current?.pause(); setIsPlaying(false); }
+                // Initialize filmstrip range to full video if not set
+                const vid = videoRef.current;
+                const videoDuration = vid?.duration ?? duration;
+                if (newShowFilmstrip && filmstripOutT === 0 && videoDuration > 0) {
+                  setFilmstripInT(0);
+                  setFilmstripOutT(videoDuration);
+                }
+              }}
+              className={`flex items-center gap-1 px-2 py-1 text-xs rounded-lg border transition-colors ${showFilmstrip ? 'bg-amber-600/30 text-amber-300 border-amber-500/40' : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'}`}
+              title={showFilmstrip ? 'Hide filmstrip' : 'Show filmstrip (frame-by-frame)'}
+            >
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M18 3v2h-2V3H8v2H6V3H4v18h2v-2h2v2h8v-2h2v2h2V3h-2zM8 17H6v-2h2v2zm0-4H6v-2h2v2zm0-4H6V7h2v2zm10 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V7h2v2z"/></svg>
+              Frames
+            </button>
+
           </div>
 
           <div className="flex items-center gap-1 flex-none">
@@ -418,9 +447,18 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
               setVideoEl(el);
             }}
             src={video.url}
+            muted
             className="w-full h-full object-contain"
             onTimeUpdate={handleTimeUpdate}
-            onLoadedMetadata={() => setDuration(videoRef.current?.duration ?? 0)}
+            onLoadedMetadata={() => {
+              const dur = videoRef.current?.duration ?? 0;
+              setDuration(dur);
+              // Initialize filmstrip range to full video when metadata loads (use ref to avoid stale closure)
+              if (dur > 0 && !filmstripInitRef.current) {
+                filmstripInitRef.current = true;
+                setFilmstripOutT(dur);
+              }
+            }}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
             onEnded={() => { if (!isLoop) { setIsPlaying(false); if (hasNext) onNext?.(); } }}
@@ -563,6 +601,24 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
                 : <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" /></svg>
               }
             </button>
+            {/* Filmstrip button – toggles frame-by-frame navigation like in Editor */}
+            <button
+              onClick={() => { 
+                setShowFilmstrip(p => !p);
+                setShowScreenshotPanel(false);
+                setShowGifPanel(false);
+                if (isPlaying) { videoRef.current?.pause(); setIsPlaying(false); }
+                // Initialize filmstrip range to full video if not set
+                if (filmstripOutT === 0 && duration > 0) {
+                  setFilmstripInT(0);
+                  setFilmstripOutT(duration);
+                }
+              }}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${showFilmstrip ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300'}`}
+              title="Filmstrip (Frame-by-frame navigation)"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M18 3v2h-2V3H8v2H6V3H4v18h2v-2h2v2h8v-2h2v2h2V3h-2zM8 17H6v-2h2v2zm0-4H6v-2h2v2zm0-4H6V7h2v2zm10 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V7h2v2z"/></svg>
+            </button>
             {/* Screenshot button – toggles the screenshot panel */}
             <button
               onClick={() => { setShowScreenshotPanel(p => !p); setShowGifPanel(false); if (isPlaying) { videoRef.current?.pause(); setIsPlaying(false); } }}
@@ -614,6 +670,96 @@ export function VideoPlayer({ video, onClose, onPrev, onNext, hasPrev, hasNext }
               <input type="range" min="0" max="1" step="0.05" value={isMuted ? 0 : volume} onChange={handleVolumeChange} className="w-20 accent-cyan-500 cursor-pointer" />
             </div>
           </div>
+
+          {/* ── Filmstrip Panel – frame-by-frame navigation like in Editor ── */}
+          {showFilmstrip && (
+            <div className="mt-2 pt-2 border-t border-slate-800/60">
+              <div className="flex items-center gap-2 mb-3">
+                <svg className="w-3.5 h-3.5 text-amber-400 flex-none" fill="currentColor" viewBox="0 0 24 24"><path d="M18 3v2h-2V3H8v2H6V3H4v18h2v-2h2v2h8v-2h2v2h2V3h-2zM8 17H6v-2h2v2zm0-4H6v-2h2v2zm0-4H6V7h2v2zm10 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V7h2v2z"/></svg>
+                <span className="text-xs font-semibold text-slate-300">Filmstrip – Frame-by-frame navigation</span>
+                <span className="text-xs text-slate-500">Drag markers or click to scrub</span>
+                <span className="text-xs text-amber-400 font-mono ml-auto">
+                  {formatDuration(filmstripInT)} – {formatDuration(filmstripOutT)}
+                </span>
+              </div>
+              
+              <FrameScrubber
+                videoUrl={video.url}
+                dur={duration}
+                inT={filmstripInT}
+                outT={Math.max(filmstripInT + 1 / 30, filmstripOutT)}
+                onSetIn={t => {
+                  setFilmstripInT(t);
+                  if (t >= filmstripOutT) setFilmstripOutT(Math.min(duration, t + 1));
+                }}
+                onSetOut={t => {
+                  setFilmstripOutT(t);
+                  if (t <= filmstripInT) setFilmstripInT(Math.max(0, t - 1));
+                }}
+                videoRef={videoRef}
+                accent="amber"
+              />
+
+              {/* Quick actions row */}
+              <div className="flex items-center gap-2 mt-3">
+                <button
+                  onClick={() => {
+                    setFilmstripInT(0);
+                    setFilmstripOutT(duration);
+                  }}
+                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs transition-colors"
+                  title="Reset markers to full video"
+                >
+                  Reset
+                </button>
+                <button
+                  onClick={() => {
+                    const vid = videoRef.current;
+                    if (vid) vid.currentTime = filmstripInT;
+                  }}
+                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs transition-colors"
+                >
+                  Go to IN
+                </button>
+                <button
+                  onClick={() => {
+                    const vid = videoRef.current;
+                    if (vid) vid.currentTime = filmstripOutT;
+                  }}
+                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs transition-colors"
+                >
+                  Go to OUT
+                </button>
+                <div className="flex-1" />
+                <span className="text-xs text-slate-600">
+                  Duration: {formatDuration(filmstripOutT - filmstripInT)}
+                </span>
+                {/* Copy range to GIF export */}
+                <button
+                  onClick={() => {
+                    setGifStartTime(filmstripInT);
+                    setGifEndTime(filmstripOutT);
+                    setShowFilmstrip(false);
+                    setShowGifPanel(true);
+                  }}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 text-xs border border-purple-500/30 transition-colors"
+                  title="Use this range for GIF export"
+                >
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M11.5 9H13v6h-1.5V9zM9 9H6c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-2H8.5v1.5h-2v-3H10V10c0-.55-.45-1-1-1zm10 1.5V9h-4.5v6H16v-2h2v-1.5h-2v-1h3z"/></svg>
+                  Export as GIF
+                </button>
+                {/* Screenshot at current position */}
+                <button
+                  onClick={takeScreenshot}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-300 text-xs border border-cyan-500/30 transition-colors"
+                  title="Take screenshot at current position"
+                >
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M20 5h-3.17L15 3H9L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 14H4V7h4.05l1.83-2h4.24l1.83 2H20v12zM12 8c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5z"/></svg>
+                  Screenshot
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── Screenshot Panel – shown only when user clicks the camera button ── */}
           {showScreenshotPanel && duration > 0 && (

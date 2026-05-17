@@ -52,7 +52,7 @@ export interface WebMExportOptions {
   cancelRef?: { current: boolean };
 }
 
-const DEFAULT_BITRATE = 5_000_000;
+const DEFAULT_BITRATE = 8_000_000;  // Higher bitrate for better quality
 
 function pickMimeType(): string | null {
   if (typeof MediaRecorder === 'undefined') return null;
@@ -387,7 +387,9 @@ export async function exportClipsToWebM(
   // ── Run the recording ─────────────────────────────────────────────────
   let exportError: Error | null = null;
   try {
-    recorder.start(); // single chunk on stop — avoids empty-timeslice races
+    // Start with timeslice to force keyframes at regular intervals
+    // This prevents playback stuttering issues when seeking
+    recorder.start(1000); // emit chunks every 1s, each starting with a keyframe
 
     for (const l of loaded) {
       if (cancelRef?.current) break;
